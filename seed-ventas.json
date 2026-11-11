@@ -218,65 +218,8 @@
   },
   {
    "kind": "question",
-   "label": "8.2 ¿Qué información no debe dar nunca el sistema por escrito sin autorización?",
-   "type": "textarea",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "8.3 ¿En qué momento exacto debe pasarse la conversación a un humano?",
-   "type": "textarea",
-   "required": false
-  },
-  {
-   "kind": "question",
    "label": "8.4 ¿Qué consideran ustedes un lead “calificado”?",
    "type": "textarea",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "8.5 ¿Manejan más de un proyecto o producto? Si es así, listen cuáles y quién atiende cada uno",
-   "type": "textarea",
-   "required": false,
-   "placeholder": "Un proyecto por línea, ej:\nTorre Norte — Juan Pérez"
-  },
-  {
-   "kind": "section",
-   "title": "9 · Horarios y disponibilidad"
-  },
-  {
-   "kind": "info",
-   "text": "Agenda comercial"
-  },
-  {
-   "kind": "question",
-   "label": "9.1 Horario de atención al cliente",
-   "type": "text",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "9.2 ¿Qué debe pasar con un mensaje que entra fuera de horario?",
-   "type": "textarea",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "9.3 ¿Quiénes son los comerciales encargados de las reuniones, cuyo calendario vamos a conectar para el agendamiento de citas?",
-   "type": "textarea",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "9.4 ¿Dónde se hacen las citas?",
-   "type": "text",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "9.5 ¿Cuánto dura una cita típica y cuánto tiempo necesitan entre una y otra?",
-   "type": "text",
    "required": false
   },
   {
