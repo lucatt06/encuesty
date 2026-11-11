@@ -285,7 +285,7 @@ function projectCard(id, p, i) {
       <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (95 m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
     <label class="pj-l">Plan de pago</label>
-    <textarea rows="2" data-p="${i}" data-f="payment" placeholder="Ej: Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
+    <textarea rows="2" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
     <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
