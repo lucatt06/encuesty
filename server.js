@@ -334,7 +334,7 @@ app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
   const head = ['Nombre', 'Correo', 'Estado', 'Inicio', 'Última actualización', 'Completado', ...qs.map((q) => q.label), 'Archivos'];
   const lines = [head.map(cell).join(',')];
   for (const r of rows) {
-    const vals = qs.map((q) => { const a = r.answers[q.id]; return Array.isArray(a) ? a.join('; ') : (a && typeof a === 'object' ? [a.q ? 'Pregunta: ' + a.q : '', a.a ? 'Respuesta: ' + a.a : ''].filter(Boolean).join(' / ') : a); });
+    const vals = qs.map((q) => { const a = r.answers[q.id]; return Array.isArray(a) ? a.join('; ') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join(' || ') : a); });
     lines.push([r.name, r.email, r.status === 'completed' ? 'Completado' : 'En curso', r.started_at.toISOString(), r.updated_at.toISOString(), r.completed_at ? r.completed_at.toISOString() : '', ...vals, r.filenames].map(cell).join(','));
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

@@ -42,6 +42,10 @@ section{scroll-margin-top:70px}
 .qa-box textarea+textarea{border-top:1px dashed var(--line);background:var(--cream)}
 .qa-box textarea::placeholder{color:#a3a8b8}
 .qa-wrap.field-err .qa-box{border-color:var(--err)}
+.qa-box{position:relative}.qa-extras .qa-box{margin-top:12px}
+.qa-del{position:absolute;top:6px;right:8px;z-index:2;padding:0;width:26px;height:26px;line-height:22px;font-size:18px;border-radius:50%;color:var(--muted)}
+.qa-add{margin-top:12px;color:var(--brand);border-color:var(--brand);padding:9px 20px}
+.qa-add:hover{background:var(--cream)}
 .sec-h{margin:44px 0 6px;padding-top:26px;border-top:2px solid var(--cream)}
 section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .field-err>label.q{color:var(--err)}
@@ -175,9 +179,10 @@ function renderItem(it) {
   if (types[it.type]) return wrapS + lab + `<input id="${it.id}" type="${types[it.type]}" data-in="${it.id}" value="${esc(v)}"${ph}>` + wrapE;
   if (it.type === 'qa') {
     const q = (v && typeof v === 'object') ? v : { q: typeof v === 'string' ? v : '', a: '' };
-    return `<div data-q="${it.id}" class="qa-wrap"><div class="qa-box">
-      <textarea data-qa="${it.id}" data-part="q" aria-label="${esc(it.label)}" placeholder="${esc(it.label)}">${esc(q.q)}</textarea>
-      <textarea data-qa="${it.id}" data-part="a" aria-label="Tu respuesta" placeholder="Tu respuesta (lo que respondes a esta pregunta)">${esc(q.a)}</textarea></div></div>`;
+    const last = isLastQa(it), base = qaBase(it);
+    const extras = last ? (q.extra || []).map((e, i) => qaBox(it.id, 'Pregunta #' + (base + i + 1), e, true)).join('') : '';
+    return `<div data-q="${it.id}" class="qa-wrap">${qaBox(it.id, it.label, q, false)}
+      ${last ? `<div class="qa-extras">${extras}</div><button type="button" class="qa-add" data-qa-add="${it.id}">+ Añadir otra pregunta y respuesta</button>` : ''}</div>`;
   }
   if (it.type === 'textarea') return wrapS + lab + `<textarea id="${it.id}" data-in="${it.id}"${ph}>${esc(v)}</textarea>` + wrapE;
   if (it.type === 'radio' || it.type === 'checkbox') {
@@ -197,12 +202,38 @@ function renderItem(it) {
   }
   return '';
 }
+function qaBox(id, ph, v, removable) {
+  v = v || {};
+  return `<div class="qa-box">${removable ? '<button type="button" class="qa-del" data-qa-del title="Quitar" aria-label="Quitar esta pregunta">×</button>' : ''}
+    <textarea data-qa="${id}" data-part="q" aria-label="${esc(ph)}" placeholder="${esc(ph)}">${esc(v.q)}</textarea>
+    <textarea data-qa="${id}" data-part="a" aria-label="Tu respuesta" placeholder="Tu respuesta (lo que respondes a esta pregunta)">${esc(v.a)}</textarea></div>`;
+}
+function isLastQa(it) {
+  for (const st of state.steps) { const i = st.items.indexOf(it); if (i >= 0) { const n = st.items[i + 1]; return !(n && n.kind === 'question' && n.type === 'qa'); } }
+  return true;
+}
+const qaBase = it => { const m = /#(\d+)/.exec(it.label); return m ? +m[1] : 1; };
+function collectQA(id) {
+  const boxes = [...document.querySelector(`[data-q="${id}"]`).querySelectorAll('.qa-box')];
+  const val = b => ({ q: b.querySelector('[data-part=q]').value, a: b.querySelector('[data-part=a]').value });
+  const obj = val(boxes[0]), extra = boxes.slice(1).map(val);
+  if (extra.length) obj.extra = extra;
+  setAns(id, obj);
+}
 const fileRow = f => `<div class="file-item"><span>📎 ${esc(f.filename)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
 
 function bind() {
-  document.querySelectorAll('[data-qa]').forEach(el => el.oninput = () => {
-    const id = el.dataset.qa, box = el.closest('.qa-box');
-    setAns(id, { q: box.querySelector('[data-part=q]').value, a: box.querySelector('[data-part=a]').value });
+  document.querySelectorAll('[data-qa]').forEach(el => el.oninput = () => collectQA(el.dataset.qa));
+  document.querySelectorAll('[data-qa-add]').forEach(btn => btn.onclick = () => {
+    const id = btn.dataset.qaAdd, wrap = btn.closest('.qa-wrap'), ex = wrap.querySelector('.qa-extras');
+    const it = findQ(id), n = wrap.querySelectorAll('.qa-box').length;
+    ex.insertAdjacentHTML('beforeend', qaBox(id, 'Pregunta #' + (qaBase(it) + n), {}, true));
+    bind(); ex.lastElementChild.querySelector('textarea').focus();
+  });
+  document.querySelectorAll('[data-qa-del]').forEach(btn => btn.onclick = () => {
+    const wrap = btn.closest('.qa-wrap'), id = wrap.dataset.q; btn.closest('.qa-box').remove();
+    wrap.querySelectorAll('.qa-extras .qa-box').forEach((b, i) => { b.querySelector('[data-part=q]').placeholder = 'Pregunta #' + (qaBase(findQ(id)) + i + 1); });
+    collectQA(id);
   });
   document.querySelectorAll('[data-in]').forEach(el => el.oninput = () => setAns(el.dataset.in, el.value));
   document.querySelectorAll('[data-opt],[data-other-toggle],[data-other]').forEach(el => el.onchange = el.oninput = () => collectChoice((el.dataset.opt || el.dataset.otherToggle || el.dataset.other)));
