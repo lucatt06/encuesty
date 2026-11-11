@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Respuestas compartidas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8fafb;--card:#fff;--ink:#0e1742;--muted:#6a7287;--line:#e4e2da;--cream:#f4f1e9;--brand:#e93b74;--navy:#0e1742}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif}
+header{background:var(--navy);color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+header b{font:800 22px 'Plus Jakarta Sans',Inter,sans-serif;letter-spacing:-.5px}header b i{color:var(--brand);font-style:normal}
+header span{font-size:13px;opacity:.75}
+main{max-width:900px;margin:0 auto;padding:24px 16px 70px}
+h1{font:800 28px/1.15 'Plus Jakarta Sans',Inter,sans-serif;letter-spacing:-.7px;margin:0 0 4px}
+.muted{color:var(--muted)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.ok{background:#dcf3e3;color:#16a34a}.pill.warn{background:#fdebd2;color:#d97706}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px;margin-top:16px;box-shadow:0 6px 24px rgba(14,23,66,.05)}
+.ans{padding:10px 0;border-bottom:1px solid var(--line)}.ans .l{font-weight:600}.ans .a{white-space:pre-wrap;margin-top:2px}
+.sec{margin:22px 0 4px;color:var(--brand);font-weight:800}
+a{color:var(--navy)}
+.msg{text-align:center;padding:60px 16px}
+</style>
+</head>
+<body>
+<header><b>encuesty<i>.</i></b><span>Vista de solo lectura</span></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script src="/static/render.js"></script>
+<script>
+const token = location.pathname.split('/')[2];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = d => d ? new Date(d).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+(async () => {
+  const $ = document.getElementById('app');
+  try {
+    const r = await fetch('/api/share/' + encodeURIComponent(token));
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    document.title = d.name + ' · ' + d.title;
+    const body = renderResponseHtml(d, id => '/api/share/' + encodeURIComponent(token) + '/files/' + id);
+    $.innerHTML = `<h1>${esc(d.name)}</h1>
+      <div class="muted">${esc(d.title)} · <span class="pill ${d.status === 'completed' ? 'ok' : 'warn'}">${d.status === 'completed' ? 'Completado' : 'En curso'}</span> · ${d.status === 'completed' ? fmt(d.completed_at) : 'Última actividad ' + fmt(d.updated_at)}</div>
+      <div class="card">${body}</div>`;
+  } catch {
+    $.innerHTML = '<div class="msg"><h1>Este enlace ya no está disponible</h1><p class="muted">Pudo haberse desactivado o no existir. Pide uno nuevo a quien te lo compartió.</p></div>';
+  }
+})();
+</script>
+</body>
+</html>

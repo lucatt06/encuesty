@@ -154,6 +154,9 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
+    ALTER TABLE responses ADD COLUMN IF NOT EXISTS share_token TEXT;
+    ALTER TABLE responses ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
+    CREATE UNIQUE INDEX IF NOT EXISTS responses_share_token_idx ON responses (share_token) WHERE share_token IS NOT NULL;
     ALTER TABLE files ALTER COLUMN data DROP NOT NULL;
     ALTER TABLE files ALTER COLUMN size TYPE BIGINT;
   `);
@@ -346,7 +349,7 @@ app.delete('/api/admin/surveys/:id', adminAuth, async (req, res) => {
 app.get('/api/admin/surveys/:id/responses', adminAuth, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT r.id, r.status, r.step, r.started_at, r.updated_at, r.completed_at, c.name, c.email,
-       (SELECT count(*)::int FROM files f WHERE f.response_id=r.id) AS files
+       (SELECT count(*)::int FROM files f WHERE f.response_id=r.id) AS files, (r.share_token IS NOT NULL) AS shared
      FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.survey_id=$1 ORDER BY r.updated_at DESC`, [req.params.id]);
   res.json({ responses: rows });
 });
@@ -364,9 +367,7 @@ app.delete('/api/admin/responses/:id', adminAuth, async (req, res) => {
   await s3Delete(keys);
   res.json({ ok: true });
 });
-app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
-  const f = (await pool.query('SELECT * FROM files WHERE id=$1', [req.params.id])).rows[0];
-  if (!f) return res.status(404).end();
+async function sendStoredFile(res, f) {
   if (f.s3_key) {
     const url = await S3.getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: f.s3_key,
       ResponseContentType: f.mime, ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(f.filename)}` }), { expiresIn: 300 });
@@ -375,6 +376,47 @@ app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
   res.setHeader('Content-Type', f.mime);
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
   res.send(f.data);
+}
+app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
+  const f = (await pool.query('SELECT * FROM files WHERE id=$1', [req.params.id])).rows[0];
+  if (!f) return res.status(404).end();
+  await sendStoredFile(res, f);
+});
+
+/* ---------- compartir respuestas (enlace público de solo lectura) ---------- */
+app.post('/api/admin/responses/:id/share', adminAuth, async (req, res) => {
+  const token = crypto.randomBytes(24).toString('base64url');
+  const { rows } = await pool.query('UPDATE responses SET share_token=COALESCE(share_token,$1), shared_at=COALESCE(shared_at,now()) WHERE id=$2 RETURNING share_token', [token, req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'No existe' });
+  res.json({ ok: true, token: rows[0].share_token, url: `${baseUrl(req)}/r/${rows[0].share_token}` });
+});
+app.delete('/api/admin/responses/:id/share', adminAuth, async (req, res) => {
+  await pool.query('UPDATE responses SET share_token=NULL, shared_at=NULL WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+const validToken = (t) => /^[A-Za-z0-9_-]{20,64}$/.test(t || '');
+const noIndex = (res) => { res.set('X-Robots-Tag', 'noindex, nofollow'); res.set('Cache-Control', 'no-store'); };
+async function sharedResponse(token) {
+  if (!validToken(token)) return null;
+  return (await pool.query(
+    `SELECT r.id, r.status, r.answers, r.started_at, r.updated_at, r.completed_at, c.name, s.title, s.schema
+     FROM responses r JOIN clients c ON c.id=r.client_id JOIN surveys s ON s.id=r.survey_id WHERE r.share_token=$1`, [token])).rows[0] || null;
+}
+app.get('/api/share/:token', async (req, res) => {
+  noIndex(res);
+  const r = await sharedResponse(req.params.token);
+  if (!r) return res.status(404).json({ error: 'Enlace no disponible' });
+  r.files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  delete r.id;
+  res.json(r);
+});
+app.get('/api/share/:token/files/:fid', async (req, res) => {
+  noIndex(res);
+  const r = await sharedResponse(req.params.token);
+  if (!r) return res.status(404).end();
+  const f = (await pool.query('SELECT * FROM files WHERE id=$1 AND response_id=$2', [req.params.fid, r.id])).rows[0];
+  if (!f) return res.status(404).end();
+  await sendStoredFile(res, f);
 });
 
 app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
@@ -402,6 +444,7 @@ app.use('/static', express.static(pub, { maxAge: '5m' }));
 app.get('/health', (req, res) => res.send('ok'));
 app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.get('/s/:slug', (req, res) => res.sendFile(path.join(pub, 'survey.html')));
+app.get('/r/:token', (req, res) => { noIndex(res); res.sendFile(path.join(pub, 'share.html')); });
 app.get('/', (req, res) => res.redirect('/admin'));
 
 app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Error del servidor.' }); });

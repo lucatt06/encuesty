@@ -47,6 +47,7 @@ label.s{font-size:12px;color:var(--muted);display:block;margin:6px 0 2px}
 <body>
 <header><b>encuesty<i>.</i></b><div id="hdr"></div></header>
 <main id="app"></main>
+<script src="/static/render.js"></script>
 <script>
 const $ = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -98,45 +99,34 @@ async function viewResponses(id) {
   $.innerHTML = `<p><a href="#/" style="color:var(--brand)">← Cuestionarios</a></p><div class="spread"><div><h1>${esc(s.title)}</h1><div class="row"><span class="link">${esc(link)}</span><button class="sm" onclick="copy('${esc(link)}',this)">Copiar</button></div></div>
     <a class="btn" href="/api/admin/surveys/${id}/export.csv">Descargar CSV</a></div><br>
     <div class="card" style="overflow:auto"><table><tr><th>Cliente</th><th>Correo</th><th>Estado</th><th>Paso</th><th>Archivos</th><th>Actualizado</th><th></th></tr>
-    ${responses.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td>
+    ${responses.map(r => `<tr><td>${esc(r.name)}${r.shared ? ' <span title="Enlace público activo">🔗</span>' : ''}</td><td>${esc(r.email)}</td>
       <td><span class="pill ${r.status === 'completed' ? 'ok' : 'warn'}">${r.status === 'completed' ? 'Completado' : 'En curso'}</span></td>
       <td>${r.step + 1}</td><td>${r.files || ''}</td><td>${fmt(r.updated_at)}</td><td><a class="btn sm" href="#/respuestas/${r.id}">Ver</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">Todavía nadie ha abierto este cuestionario.</td></tr>'}</table></div>`;
 }
-function fmtProjectsAdmin(arr, sep, off = 0) {
-  if (!Array.isArray(arr)) return '';
-  return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
-    const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
-    const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
-    return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`].join(sep.in);
-  }).join(sep.out);
-}
 async function viewResponse(id) {
   const r = await api('/responses/' + id); hdr();
-  let out = '';
-  for (const it of r.schema.items) {
-    if (it.kind === 'section') out += `<div class="sec">${esc(it.title)}</div>`;
-    else if (it.kind === 'question') {
-      const a = r.answers[it.id];
-      if (it.type === 'project') {
-        const prs = Array.isArray(a) ? a : [];
-        const blocks = prs.map((pr, n) => {
-          const fl = r.files.filter(f => f.question_id === it.id + '#' + pr.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
-          const t = fmtProjectsAdmin([pr], { in: '\n', out: '' }, n);
-          const lk = (pr.links || []).map(l => `<div><a href="${esc(l)}" target="_blank" rel="noopener">🔗 ${esc(l)}</a></div>`).join('');
-          if (!t && !fl && !lk) return '';
-          return `<div style="margin-bottom:12px">${esc(t || 'Proyecto ' + (n + 1) + ' (sin datos)')}${fl ? '<div class="muted" style="margin-top:4px">Archivos del proyecto:</div>' + fl : ''}${lk ? '<div class="muted" style="margin-top:4px">Enlaces del proyecto:</div>' + lk : ''}</div>`;
-        }).filter(Boolean).join('');
-        out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${blocks || '<span class="muted">— sin respuesta —</span>'}</div></div>`; continue; }
-      let txt = Array.isArray(a) ? a.join('\n') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join('\n\n') : (a ?? ''));
-      const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
-      out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${txt === '' && !fl ? '<span class="muted">— sin respuesta —</span>' : esc(txt)}${fl}</div></div>`;
-    }
-  }
+  const out = renderResponseHtml(r, id => '/api/admin/files/' + id);
   $.innerHTML = `<p><a href="#/s/${r.survey_id}">← ${esc(r.title)}</a></p>
     <div class="spread"><div><h1>${esc(r.name)}</h1><p class="muted">${esc(r.email)} · ${r.status === 'completed' ? 'Completado ' + fmt(r.completed_at) : 'En curso, última actividad ' + fmt(r.updated_at)}</p></div>
     <button class="danger" onclick="delResp(${r.id},${r.survey_id})">Eliminar respuesta</button></div>
+    <div id="sharebox"></div>
     <div class="card">${out}</div>`;
+  shareBox(r);
 }
+function shareBox(r) {
+  const box = document.getElementById('sharebox');
+  if (!r.share_token) {
+    box.innerHTML = `<div class="card" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div style="flex:1;min-width:220px"><b>Compartir esta respuesta</b><div class="muted">Crea un enlace público de solo lectura: cualquiera que lo tenga puede verla, sin iniciar sesión.</div></div><button class="primary" onclick="shareResp(${r.id})">🔗 Crear enlace para compartir</button></div>`;
+    return;
+  }
+  const url = location.origin + '/r/' + r.share_token;
+  box.innerHTML = `<div class="card"><b>🔗 Enlace público activo</b>
+    <div class="row" style="margin:10px 0"><input type="text" readonly value="${esc(url)}" onclick="this.select()" style="flex:1;min-width:240px"><button class="primary" onclick="copy('${esc(url)}',this)">Copiar enlace</button><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a></div>
+    <div class="muted" style="margin-bottom:8px">Quien tenga este enlace puede ver las respuestas (sin el correo del cliente) y descargar sus archivos. Puedes desactivarlo cuando quieras.</div>
+    <button class="danger sm" onclick="unshareResp(${r.id})">Dejar de compartir</button></div>`;
+}
+async function shareResp(id) { await api('/responses/' + id + '/share', { method: 'POST' }); viewResponse(id); }
+async function unshareResp(id) { if (confirm('¿Dejar de compartir? El enlace actual dejará de funcionar para todos.')) { await api('/responses/' + id + '/share', { method: 'DELETE' }); viewResponse(id); } }
 async function delResp(id, sid) { if (confirm('¿Eliminar esta respuesta y sus archivos? No se puede deshacer.')) { await api('/responses/' + id, { method: 'DELETE' }); location.hash = '#/s/' + sid; } }
 
 /* ---------- editor de preguntas ---------- */
