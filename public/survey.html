@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cuestionario</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--ink:#1c2033;--muted:#6b7190;--line:#dfe2ee;--brand:#4f46e5;--brand-d:#4338ca;--ok:#16a34a;--err:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1220;--card:#181c30;--ink:#eceefc;--muted:#9aa0c4;--line:#2b3050;--brand:#818cf8;--brand-d:#6366f1}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 80px}
+.brand{font-weight:700;color:var(--brand);letter-spacing:.3px;margin-bottom:12px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+h1{font-size:24px;margin:0 0 8px}
+h2{font-size:20px;margin:0 0 16px}
+p.muted,.muted{color:var(--muted)}
+label.q{display:block;font-weight:600;margin:22px 0 6px}
+.req{color:var(--err)}
+input[type=text],input[type=email],input[type=tel],input[type=url],input[type=number],input[type=date],textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit}
+textarea{min-height:96px;resize:vertical}
+input:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:transparent}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer}
+.opt:hover{border-color:var(--brand)}
+.opt input{margin-top:4px;accent-color:var(--brand)}
+.opt.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,transparent)}
+.other-in{margin:4px 0 0 30px;width:calc(100% - 30px)}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:11px 20px}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+button.primary:hover{background:var(--brand-d)}
+button:disabled{opacity:.5;cursor:default}
+.nav{display:flex;justify-content:space-between;gap:12px;margin-top:30px}
+.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin:0 0 6px}
+.bar i{display:block;height:100%;background:var(--brand);transition:width .3s}
+.meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:18px}
+.saved{color:var(--ok)}
+.error{color:var(--err);font-size:14px;margin-top:6px}
+.field-err input,.field-err textarea{border-color:var(--err)}
+.info{color:var(--muted);margin:10px 0}
+.file-list{margin:8px 0}
+.file-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;margin:4px 0;font-size:14px}
+.file-item button{padding:3px 10px;font-size:13px}
+.center{text-align:center;padding:30px 0}
+.check{font-size:46px;color:var(--ok)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Encuesty</div>
+  <div id="app"><div class="card"><p class="muted">Cargando…</p></div></div>
+</div>
+<script>
+const slug = location.pathname.split('/')[2];
+const $app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let state = { survey: null, steps: [], step: 0, answers: {}, files: [], name: '', completed: false, saved: '' };
+let pending = {}, timer = null, saving = false;
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api/s/' + slug + path, { headers: opts.body && !(opts.body instanceof FormData) ? {'Content-Type':'application/json'} : {}, credentials: 'same-origin', ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || 'Error'), { status: r.status, data: j });
+  return j;
+}
+
+/* ---------- pasos ---------- */
+function buildSteps(items) {
+  const steps = []; let cur = { title: '', items: [] };
+  const flush = () => { if (cur.items.some(i => i.kind === 'question' || i.kind === 'info')) steps.push(cur); };
+  for (const it of items) {
+    if (it.kind === 'section' || it.kind === 'page') { flush(); cur = { title: it.title || '', items: [] }; }
+    else cur.items.push(it);
+  }
+  flush();
+  return steps.length ? steps : [{ title: '', items: [] }];
+}
+
+/* ---------- inicio de sesión por correo ---------- */
+async function boot() {
+  let info;
+  try { info = await api(''); } catch (e) { return $app.innerHTML = `<div class="card center"><h2>${esc(e.message)}</h2></div>`; }
+  document.title = info.title;
+  state.title = info.title;
+  try { const me = await api('/me'); return begin(me); } catch {}
+  renderLogin(info.title);
+}
+function renderLogin(title, needName = false, email = '') {
+  $app.innerHTML = `<div class="card">
+    <h1>${esc(title)}</h1>
+    <p class="muted">${needName ? 'Es tu primera vez aquí. ¿Cómo te llamas?' : 'Escribe tu correo para empezar o continuar donde te quedaste.'}</p>
+    <form id="f">
+      <label class="q">Correo electrónico</label>
+      <input type="email" id="email" required autocomplete="email" value="${esc(email)}" ${needName ? 'readonly' : 'autofocus'} placeholder="tu@correo.com">
+      ${needName ? '<label class="q">Tu nombre</label><input type="text" id="name" required autocomplete="name" autofocus placeholder="Nombre y apellido">' : ''}
+      <div class="error" id="err"></div>
+      <div class="nav"><span></span><button class="primary" type="submit">${needName ? 'Empezar' : 'Continuar'}</button></div>
+    </form></div>`;
+  document.getElementById('f').onsubmit = async ev => {
+    ev.preventDefault();
+    const em = document.getElementById('email').value.trim();
+    const nm = document.getElementById('name')?.value.trim() || '';
+    const btn = ev.submitter; btn.disabled = true;
+    try {
+      const r = await api('/start', { method: 'POST', body: JSON.stringify({ email: em, name: nm }) });
+      if (r.needName) return renderLogin(title, true, em);
+      begin(r);
+    } catch (e) { document.getElementById('err').textContent = e.message; btn.disabled = false; }
+  };
+}
+function begin(r) {
+  state.survey = r.survey; state.steps = buildSteps(r.survey.schema.items);
+  state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name;
+  state.step = Math.min(r.step || 0, state.steps.length - 1);
+  state.completed = r.status === 'completed';
+  state.thanks = r.survey.thanks;
+  if (state.completed) return renderDone(true);
+  render();
+}
+
+/* ---------- render del formulario ---------- */
+function render() {
+  const st = state.steps[state.step], total = state.steps.length;
+  const pct = Math.round((state.step / total) * 100);
+  $app.innerHTML = `<div class="card">
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="meta"><span>Paso ${state.step + 1} de ${total}</span><span id="saved" class="saved">${state.saved}</span></div>
+    ${state.step === 0 ? `<h1>${esc(state.survey.title)}</h1>` : ''}
+    ${st.title ? `<h2>${esc(st.title)}</h2>` : ''}
+    <div id="qs">${st.items.map(renderItem).join('')}</div>
+    <div class="error" id="err"></div>
+    <div class="nav">
+      <button id="prev" ${state.step === 0 ? 'style="visibility:hidden"' : ''}>← Anterior</button>
+      <button id="next" class="primary">${state.step === total - 1 ? 'Enviar respuestas' : 'Siguiente →'}</button>
+    </div></div>`;
+  bind();
+  document.getElementById('prev').onclick = () => go(state.step - 1);
+  document.getElementById('next').onclick = next;
+  window.scrollTo({ top: 0 });
+}
+function renderItem(it) {
+  if (it.kind === 'info') return `<p class="info">${esc(it.text)}</p>`;
+  if (it.kind !== 'question') return '';
+  const v = state.answers[it.id];
+  const lab = `<label class="q" for="${it.id}">${esc(it.label)}${it.required ? ' <span class="req">*</span>' : ''}</label>`;
+  const wrapS = `<div data-q="${it.id}">`, wrapE = '</div>';
+  const ph = it.placeholder ? ` placeholder="${esc(it.placeholder)}"` : '';
+  const types = { text: 'text', email: 'email', phone: 'tel', number: 'number', url: 'url', date: 'date' };
+  if (types[it.type]) return wrapS + lab + `<input id="${it.id}" type="${types[it.type]}" data-in="${it.id}" value="${esc(v)}"${ph}>` + wrapE;
+  if (it.type === 'textarea') return wrapS + lab + `<textarea id="${it.id}" data-in="${it.id}"${ph}>${esc(v)}</textarea>` + wrapE;
+  if (it.type === 'radio' || it.type === 'checkbox') {
+    const isC = it.type === 'checkbox', vals = isC ? (v || []) : (v ? [v] : []);
+    const known = vals.filter(x => (it.options || []).includes(x));
+    const otherVal = vals.find(x => typeof x === 'string' && x.startsWith('Otro: '));
+    const opts = (it.options || []).map((o, i) => `<label class="opt ${known.includes(o) ? 'on' : ''}"><input type="${isC ? 'checkbox' : 'radio'}" name="${it.id}" data-opt="${it.id}" value="${esc(o)}" ${known.includes(o) ? 'checked' : ''}><span>${esc(o)}</span></label>`).join('');
+    const other = it.other ? `<label class="opt ${otherVal !== undefined ? 'on' : ''}"><input type="${isC ? 'checkbox' : 'radio'}" name="${it.id}" data-other-toggle="${it.id}" ${otherVal !== undefined ? 'checked' : ''}><span>Otro</span></label>
+      <input type="text" class="other-in" data-other="${it.id}" placeholder="Especifica" value="${esc((otherVal || '').slice(6))}" style="${otherVal !== undefined ? '' : 'display:none'}">` : '';
+    return wrapS + lab + opts + other + wrapE;
+  }
+  if (it.type === 'file') {
+    const fs = state.files.filter(f => f.question_id === it.id);
+    return wrapS + lab + `<div class="file-list" id="fl-${it.id}">${fs.map(fileRow).join('')}</div>
+      <input type="file" data-file="${it.id}" ${it.multiple === false ? '' : 'multiple'}>
+      <div class="muted" style="font-size:13px;margin-top:4px">Máximo 15 MB por archivo.</div>` + wrapE;
+  }
+  return '';
+}
+const fileRow = f => `<div class="file-item"><span>📎 ${esc(f.filename)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
+
+function bind() {
+  document.querySelectorAll('[data-in]').forEach(el => el.oninput = () => setAns(el.dataset.in, el.value));
+  document.querySelectorAll('[data-opt],[data-other-toggle],[data-other]').forEach(el => el.onchange = el.oninput = () => collectChoice((el.dataset.opt || el.dataset.otherToggle || el.dataset.other)));
+  document.querySelectorAll('[data-file]').forEach(el => el.onchange = () => uploadFiles(el));
+  document.querySelectorAll('[data-delfile]').forEach(el => el.onclick = () => delFile(el.dataset.delfile));
+}
+function collectChoice(qid) {
+  const it = findQ(qid), isC = it.type === 'checkbox';
+  const root = document.querySelector(`[data-q="${qid}"]`);
+  let vals = [...root.querySelectorAll('[data-opt]:checked')].map(e => e.value);
+  const tog = root.querySelector('[data-other-toggle]'), oin = root.querySelector('[data-other]');
+  if (tog) {
+    oin.style.display = tog.checked ? '' : 'none';
+    if (tog.checked) vals.push('Otro: ' + oin.value.trim());
+  }
+  root.querySelectorAll('.opt').forEach(l => l.classList.toggle('on', l.querySelector('input').checked));
+  setAns(qid, isC ? vals : (vals[0] || ''));
+}
+const findQ = id => state.steps.flatMap(s => s.items).find(i => i.id === id);
+function setAns(id, v) { state.answers[id] = v; pending[id] = v; schedule(); }
+
+/* ---------- guardado automático ---------- */
+function schedule() { setSaved('Guardando…'); clearTimeout(timer); timer = setTimeout(flushSave, 700); }
+function setSaved(t) { state.saved = t; const e = document.getElementById('saved'); if (e) e.textContent = t; }
+async function flushSave(step) {
+  clearTimeout(timer);
+  if (saving) { timer = setTimeout(flushSave, 300); return; }
+  const batch = pending; pending = {};
+  if (!Object.keys(batch).length && step === undefined) return setSaved('✓ Guardado');
+  saving = true;
+  try {
+    await api('/answers', { method: 'PUT', body: JSON.stringify({ answers: batch, step: step ?? state.step }) });
+    setSaved('✓ Guardado automáticamente');
+  } catch (e) {
+    pending = { ...batch, ...pending };
+    if (e.status === 401) return renderLogin(state.title);
+    setSaved('⚠ Sin conexión, reintentando…'); timer = setTimeout(flushSave, 3000);
+  } finally { saving = false; }
+}
+window.addEventListener('beforeunload', () => {
+  if (Object.keys(pending).length) navigator.sendBeacon && fetch('/api/s/' + slug + '/answers', { method: 'PUT', keepalive: true, headers: {'Content-Type':'application/json'}, body: JSON.stringify({ answers: pending, step: state.step }) });
+});
+
+/* ---------- archivos ---------- */
+async function uploadFiles(input) {
+  const qid = input.dataset.file, list = document.getElementById('fl-' + qid);
+  for (const file of input.files) {
+    const row = document.createElement('div'); row.className = 'file-item'; row.textContent = 'Subiendo ' + file.name + '…'; list.appendChild(row);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await api('/upload/' + encodeURIComponent(qid), { method: 'POST', body: fd });
+      state.files.push(r.file); row.outerHTML = fileRow(r.file);
+    } catch (e) { row.textContent = '⚠ ' + file.name + ': ' + e.message; row.style.color = 'var(--err)'; }
+  }
+  input.value = ''; bind();
+}
+async function delFile(id) {
+  await api('/file/' + id, { method: 'DELETE' });
+  state.files = state.files.filter(f => String(f.id) !== String(id)); render();
+}
+
+/* ---------- navegación y validación ---------- */
+function missingIn(step) {
+  return state.steps[step].items.filter(it => it.kind === 'question' && it.required).filter(it => {
+    if (it.type === 'file') return !state.files.some(f => f.question_id === it.id);
+    const v = state.answers[it.id];
+    if (Array.isArray(v)) return v.length === 0 || v.every(x => x === 'Otro: ');
+    return v === undefined || String(v).trim() === '' || v === 'Otro: ';
+  });
+}
+function go(n) { flushSave(n); state.step = n; render(); }
+async function next() {
+  const miss = missingIn(state.step), err = document.getElementById('err');
+  document.querySelectorAll('.field-err').forEach(e => e.classList.remove('field-err'));
+  if (miss.length) {
+    miss.forEach(m => document.querySelector(`[data-q="${m.id}"]`)?.classList.add('field-err'));
+    err.textContent = miss.length === 1 ? 'Falta responder una pregunta obligatoria (*).' : `Faltan ${miss.length} preguntas obligatorias (*).`;
+    return document.querySelector(`[data-q="${miss[0].id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  if (state.step < state.steps.length - 1) return go(state.step + 1);
+  // último paso: revisar todo
+  for (let i = 0; i < state.steps.length; i++) if (missingIn(i).length) { go(i); setTimeout(() => { const e = document.getElementById('err'); if (e) e.textContent = 'Hay preguntas obligatorias sin responder en este paso.'; }, 50); return; }
+  document.getElementById('next').disabled = true;
+  await flushSave(state.step);
+  try { await api('/complete', { method: 'POST' }); state.completed = true; renderDone(false); }
+  catch (e) { err.textContent = e.message; document.getElementById('next').disabled = false; }
+}
+function renderDone(back) {
+  $app.innerHTML = `<div class="card center"><div class="check">✓</div>
+    <h2>${back ? 'Ya completaste este cuestionario' : '¡Gracias, ' + esc(state.name) + '!'}</h2>
+    <p class="muted">${esc(state.thanks || '')}</p>
+    <p><button id="edit">Revisar o editar mis respuestas</button></p></div>`;
+  document.getElementById('edit').onclick = () => { state.completed = false; state.step = 0; render(); };
+}
+boot();
+</script>
+</body>
+</html>

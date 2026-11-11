@@ -1,0 +1,548 @@
+{
+ "title": "Cuestionario| Ventas Automatizadas",
+ "items": [
+  {
+   "kind": "info",
+   "text": "El objetivo de este cuestionario es entender por dónde llegan hoy sus clientes potenciales y qué pasa con ellos cuando llegan. Con esta información configuramos el ruteo de los empleados digitales: cuál atiende cada canal, con qué tono y bajo qué reglas."
+  },
+  {
+   "kind": "info",
+   "text": "No hace falta que sea perfecto. Si no saben un dato exacto, pongan un estimado y márquenlo como tal."
+  },
+  {
+   "kind": "question",
+   "label": "Nombre de la empresa / cliente",
+   "type": "text",
+   "required": false,
+   "placeholder": "Ej: Inmobiliaria Los Robles"
+  },
+  {
+   "kind": "question",
+   "label": "Completado por",
+   "type": "text",
+   "required": false,
+   "placeholder": "Nombre completo"
+  },
+  {
+   "kind": "question",
+   "label": "Cargo",
+   "type": "text",
+   "required": false,
+   "placeholder": "Ej: Gerente de Ventas"
+  },
+  {
+   "kind": "question",
+   "label": "Correo electrónico",
+   "type": "email",
+   "required": false,
+   "placeholder": "nombre@empresa.com"
+  },
+  {
+   "kind": "question",
+   "label": "Fecha",
+   "type": "date",
+   "required": false,
+   "placeholder": "Selecciona una fecha"
+  },
+  {
+   "kind": "section",
+   "title": "1 · Panorama general"
+  },
+  {
+   "kind": "info",
+   "text": "De dónde llegan sus clientes"
+  },
+  {
+   "kind": "question",
+   "label": "1.1 ¿Cuáles de estos medios están usando actualmente para captar clientes?",
+   "type": "checkbox",
+   "options": [
+    "Meta — Formularios instantáneos (Lead Ads)",
+    "Meta — Anuncios de mensaje a WhatsApp (Click to WhatsApp)",
+    "Meta — Anuncios de mensaje a Messenger / DM de Instagram",
+    "Meta — Anuncios que llevan al sitio web",
+    "Google Ads (búsqueda)",
+    "Google Ads (display / YouTube / Performance Max)",
+    "Sitio web (formulario de contacto)",
+    "Sitio web (chat / WhatsApp flotante)",
+    "Publicaciones orgánicas en redes (sin pauta)",
+    "Portales inmobiliarios",
+    "Brokers / agentes externos",
+    "Referidos de clientes",
+    "Llamadas entrantes directas",
+    "Ferias, eventos, showroom o sala de ventas",
+    "Bases de datos compradas o listados propios (outbound)",
+    "Otro"
+   ],
+   "required": true,
+   "other": true
+  },
+  {
+   "kind": "question",
+   "label": "Si marcaron \"Portales inmobiliarios\", ¿cuáles?",
+   "type": "text",
+   "required": false,
+   "placeholder": "Ej: MercadoLibre, Properati..."
+  },
+  {
+   "kind": "info",
+   "text": "1.2  De todos los marcados arriba, ¿cuáles tres les traen más clientes reales (no solo más leads)?"
+  },
+  {
+   "kind": "question",
+   "label": "Canal #1",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Canal #2",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Canal #3",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "1.3 ¿Aproximadamente cuántos leads nuevos reciben al mes en total?",
+   "type": "text",
+   "required": false,
+   "placeholder": "Ej: 50"
+  },
+  {
+   "kind": "question",
+   "label": "1.4 ¿Aproximadamente cuántos de esos terminan en venta al mes?",
+   "type": "text",
+   "required": false,
+   "placeholder": "Ej: 5"
+  },
+  {
+   "kind": "section",
+   "title": "2 · Meta"
+  },
+  {
+   "kind": "info",
+   "text": "Facebook e Instagram"
+  },
+  {
+   "kind": "question",
+   "label": "2.1 ¿Quién maneja las campañas?",
+   "type": "radio",
+   "options": [
+    "Equipo interno",
+    "Agencia externa",
+    "Un freelance / consultor"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Nombre y contacto de quien maneja las campañas",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "2.2 ¿Cuántas campañas tienen activas en este momento?",
+   "type": "number",
+   "required": false,
+   "placeholder": "Ej: 4"
+  },
+  {
+   "kind": "question",
+   "label": "2.3 Para cada campaña activa: nombre, proyecto/producto, a dónde llega el lead y leads/mes",
+   "type": "textarea",
+   "required": false,
+   "placeholder": "Una campaña por línea, ej:\nVerano 2026 — Proyecto Norte — WhatsApp — 30 leads/mes"
+  },
+  {
+   "kind": "question",
+   "label": "2.4 Si usan formularios instantáneos: ¿qué preguntas incluye el formulario hoy?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "2.5 Si usan anuncios de mensaje a WhatsApp: ¿a qué número llegan esos mensajes hoy?",
+   "type": "phone",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Ese número es:",
+   "type": "radio",
+   "options": [
+    "Un número de la empresa",
+    "El número personal de un vendedor"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Si es el número personal de un vendedor, ¿de quién?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "2.6 ¿La cuenta de Instagram está configurada como cuenta profesional (Empresa o Creador) y vinculada a la página de Facebook?",
+   "type": "radio",
+   "options": [
+    "Sí",
+    "No",
+    "No estamos seguros"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "2.7 ¿Quién es el administrador del Business Manager de Meta?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "3 · Google"
+  },
+  {
+   "kind": "info",
+   "text": "Búsqueda y perfil de negocio"
+  },
+  {
+   "kind": "question",
+   "label": "3.1 ¿Tienen campañas activas en Google Ads?",
+   "type": "radio",
+   "options": [
+    "Sí",
+    "No"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Si es sí, ¿a dónde llegan esos leads?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "3.3 ¿Tienen ficha de Google Business Profile (el perfil que sale en Maps)?",
+   "type": "radio",
+   "options": [
+    "Sí",
+    "No"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Si tienen ficha, ¿reciben mensajes o llamadas por ahí?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "4 · Sitio web"
+  },
+  {
+   "kind": "info",
+   "text": "Canales del sitio"
+  },
+  {
+   "kind": "question",
+   "label": "4.1 Dirección del sitio",
+   "type": "url",
+   "required": false,
+   "placeholder": "https://www.tuempresa.com"
+  },
+  {
+   "kind": "question",
+   "label": "4.2 ¿Qué formas tiene un visitante de contactarlos desde el sitio?",
+   "type": "checkbox",
+   "options": [
+    "Formulario de contacto",
+    "Botón flotante de WhatsApp",
+    "Chat en vivo",
+    "Número de teléfono visible",
+    "Agendamiento de cita en línea",
+    "Ninguna"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Si usan chat en vivo, ¿qué herramienta?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "4.3 Cuando alguien llena el formulario del sitio, ¿a dónde llega esa información hoy?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "4.4 ¿Quién administra el sitio web?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "5 · Teléfono"
+  },
+  {
+   "kind": "info",
+   "text": "Líneas y horarios"
+  },
+  {
+   "kind": "question",
+   "label": "5.1 ¿Qué números usan hoy para que los clientes los llamen?",
+   "type": "textarea",
+   "required": false,
+   "placeholder": "Un número por línea, ej:\n+52 55 1234 5678 — Ventas — Recepción"
+  },
+  {
+   "kind": "question",
+   "label": "5.2 ¿En qué horario deben hacerse las llamadas salientes?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "6 · Brokers y referidos"
+  },
+  {
+   "kind": "info",
+   "text": "Red externa"
+  },
+  {
+   "kind": "question",
+   "label": "6.1 ¿Trabajan con brokers o agentes externos?",
+   "type": "radio",
+   "options": [
+    "Sí",
+    "No"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "Si trabajan con brokers, ¿cuántos aproximadamente?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "7 · Proceso actual"
+  },
+  {
+   "kind": "info",
+   "text": "Qué pasa hoy con un lead nuevo"
+  },
+  {
+   "kind": "question",
+   "label": "7.1 Describan paso a paso qué ocurre desde que entra un lead hasta que se cierra o se pierde",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "7.2 ¿Cuánto tarda hoy, en promedio, la primera respuesta a un lead nuevo?",
+   "type": "radio",
+   "options": [
+    "Minutos",
+    "Menos de 1 hora",
+    "Mismo día",
+    "Al día siguiente o más"
+   ],
+   "required": true
+  },
+  {
+   "kind": "question",
+   "label": "7.3 ¿Quién responde los mensajes hoy?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "7.4 ¿Cómo se decide qué vendedor atiende cada lead?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "7.5 ¿Dónde se registran hoy los leads?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "7.6 ¿Tienen leads viejos sin trabajar que quisieran reactivar? ¿Cuántos aproximadamente y desde qué fecha?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "8 · El cliente y el producto"
+  },
+  {
+   "kind": "info",
+   "text": "Contenido para los guiones"
+  },
+  {
+   "kind": "info",
+   "text": "8.1 ¿Cuáles son las 5 preguntas que más hacen los clientes potenciales? y las respuestas que tu le das a esas preguntas."
+  },
+  {
+   "kind": "question",
+   "label": "Pregunta #1",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Pregunta #2",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Pregunta #3",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Pregunta #4",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Pregunta #5",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "8.2 ¿Qué información no debe dar nunca el sistema por escrito sin autorización?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "8.3 ¿En qué momento exacto debe pasarse la conversación a un humano?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "8.4 ¿Qué consideran ustedes un lead “calificado”?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "8.5 ¿Manejan más de un proyecto o producto? Si es así, listen cuáles y quién atiende cada uno",
+   "type": "textarea",
+   "required": false,
+   "placeholder": "Un proyecto por línea, ej:\nTorre Norte — Juan Pérez"
+  },
+  {
+   "kind": "section",
+   "title": "9 · Horarios y disponibilidad"
+  },
+  {
+   "kind": "info",
+   "text": "Agenda comercial"
+  },
+  {
+   "kind": "question",
+   "label": "9.1 Horario de atención al cliente",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "9.2 ¿Qué debe pasar con un mensaje que entra fuera de horario?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "9.3 ¿Quiénes son los comerciales encargados de las reuniones, cuyo calendario vamos a conectar para el agendamiento de citas?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "9.4 ¿Dónde se hacen las citas?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "9.5 ¿Cuánto dura una cita típica y cuánto tiempo necesitan entre una y otra?",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "section",
+   "title": "10 · Cierre"
+  },
+  {
+   "kind": "info",
+   "text": "Últimos detalles"
+  },
+  {
+   "kind": "question",
+   "label": "10.1 ¿Hay algo de su operación de ventas que consideren importante y que este cuestionario no haya preguntado?",
+   "type": "textarea",
+   "required": false
+  },
+  {
+   "kind": "info",
+   "text": "10.2 ¿Quién será nuestro punto de contacto principal durante la implementación?"
+  },
+  {
+   "kind": "question",
+   "label": "Nombre",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Cargo",
+   "type": "text",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "WhatsApp",
+   "type": "phone",
+   "required": false
+  },
+  {
+   "kind": "question",
+   "label": "Correo",
+   "type": "email",
+   "required": false
+  },
+  {
+   "kind": "page"
+  },
+  {
+   "kind": "section",
+   "title": "¡Listo, gracias!"
+  },
+  {
+   "kind": "info",
+   "text": "Una vez completado, revisaremos sus respuestas y agendaremos la sesión de descubrimiento para revisarlo juntos."
+  }
+ ]
+}

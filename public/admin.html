@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Encuesty · Panel</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--ink:#1c2033;--muted:#6b7190;--line:#dfe2ee;--brand:#4f46e5;--brand-d:#4338ca;--ok:#16a34a;--warn:#d97706;--err:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1220;--card:#181c30;--ink:#eceefc;--muted:#9aa0c4;--line:#2b3050;--brand:#818cf8;--brand-d:#6366f1}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line)}
+header b{color:var(--brand);font-size:18px}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 80px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:14px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:0 0 10px}
+.muted{color:var(--muted)}
+button,.btn{font:inherit;cursor:pointer;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:8px 14px;text-decoration:none;display:inline-block}
+button.primary,.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+button.danger{color:var(--err)}
+button.sm{padding:4px 10px;font-size:13px}
+input[type=text],input[type=email],input[type=password],textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink);font:inherit}
+select{background:var(--card)}
+textarea{min-height:70px;resize:vertical}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.pill.off{background:var(--line);color:var(--muted)}
+.link{font-family:ui-monospace,monospace;font-size:13px;background:var(--bg);padding:3px 8px;border-radius:6px;word-break:break-all}
+.err{color:var(--err);font-size:14px}
+.ans{padding:10px 0;border-bottom:1px solid var(--line)}
+.ans .l{font-weight:600}.ans .a{white-space:pre-wrap;margin-top:2px}
+.sec{margin:22px 0 4px;color:var(--brand);font-weight:700}
+.item{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--bg)}
+.item .grid{display:grid;grid-template-columns:1fr 170px;gap:8px}
+@media(max-width:600px){.item .grid{grid-template-columns:1fr}}
+label.s{font-size:12px;color:var(--muted);display:block;margin:6px 0 2px}
+.login{max-width:380px;margin:90px auto}
+</style>
+</head>
+<body>
+<header><b>Encuesty</b><div id="hdr"></div></header>
+<main id="app"></main>
+<script>
+const $ = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = d => d ? new Date(d).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+async function api(path, opts = {}) {
+  const r = await fetch('/api/admin' + path, { credentials: 'same-origin', headers: opts.body ? {'Content-Type':'application/json'} : {}, ...opts });
+  if (r.status === 401) { renderLogin(); throw new Error('auth'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Error');
+  return j;
+}
+function renderLogin(msg = '') {
+  document.getElementById('hdr').innerHTML = '';
+  $.innerHTML = `<div class="card login"><h1>Panel de Encuesty</h1><p class="muted">Inicia sesión para administrar tus cuestionarios.</p>
+    <form id="f"><label class="s">Correo</label><input type="email" id="e" required autofocus>
+    <label class="s">Contraseña</label><input type="password" id="p" required>
+    <p class="err" id="m">${esc(msg)}</p><button class="primary" style="width:100%">Entrar</button></form></div>`;
+  document.getElementById('f').onsubmit = async ev => {
+    ev.preventDefault();
+    try { await fetch('/api/admin/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email: e.value, password: p.value }) }).then(async r => { if (!r.ok) throw new Error((await r.json()).error); }); route(); }
+    catch (er) { document.getElementById('m').textContent = er.message; }
+  };
+}
+async function logout() { await fetch('/api/admin/logout', { method: 'POST' }); renderLogin(); }
+function hdr() { document.getElementById('hdr').innerHTML = '<a class="btn" href="#/">Cuestionarios</a> <button onclick="logout()">Salir</button>'; }
+
+/* ---------- lista de cuestionarios ---------- */
+async function viewList() {
+  const { surveys, baseUrl } = await api('/surveys'); hdr();
+  $.innerHTML = `<div class="spread"><div><h1>Cuestionarios</h1><p class="muted">Cada cuestionario tiene su propio enlace para enviar a tus clientes.</p></div>
+    <button class="primary" onclick="newSurvey()">+ Nuevo cuestionario</button></div>
+    ${surveys.map(s => `<div class="card"><div class="spread"><div>
+      <h2>${esc(s.title)} <span class="pill ${s.published ? 'ok' : 'off'}">${s.published ? 'Activo' : 'Pausado'}</span></h2>
+      <div class="row"><span class="link">${esc(baseUrl)}/s/${esc(s.slug)}</span> <button class="sm" onclick="copy('${esc(baseUrl)}/s/${esc(s.slug)}',this)">Copiar enlace</button></div>
+      <p class="muted" style="margin:8px 0 0">${s.total} cliente(s) · ${s.completed} completado(s) · ${s.total - s.completed} en curso</p></div>
+      <div class="row"><a class="btn primary" href="#/s/${s.id}">Respuestas</a><a class="btn" href="#/editar/${s.id}">Editar preguntas</a></div></div></div>`).join('') || '<div class="card muted">Aún no hay cuestionarios.</div>'}`;
+}
+function copy(t, b) { navigator.clipboard.writeText(t); const o = b.textContent; b.textContent = '¡Copiado!'; setTimeout(() => b.textContent = o, 1500); }
+async function newSurvey() {
+  const title = prompt('Nombre del cuestionario:'); if (!title) return;
+  const s = await api('/surveys', { method: 'POST', body: JSON.stringify({ title }) });
+  location.hash = '#/editar/' + s.id;
+}
+
+/* ---------- respuestas de un cuestionario ---------- */
+async function viewResponses(id) {
+  const [{ responses }, s, list] = await Promise.all([api(`/surveys/${id}/responses`), api('/surveys/' + id), api('/surveys')]); hdr();
+  const link = `${list.baseUrl}/s/${s.slug}`;
+  $.innerHTML = `<p><a href="#/">← Cuestionarios</a></p><div class="spread"><div><h1>${esc(s.title)}</h1><div class="row"><span class="link">${esc(link)}</span><button class="sm" onclick="copy('${esc(link)}',this)">Copiar</button></div></div>
+    <a class="btn" href="/api/admin/surveys/${id}/export.csv">Descargar CSV</a></div><br>
+    <div class="card" style="overflow:auto"><table><tr><th>Cliente</th><th>Correo</th><th>Estado</th><th>Paso</th><th>Archivos</th><th>Actualizado</th><th></th></tr>
+    ${responses.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td>
+      <td><span class="pill ${r.status === 'completed' ? 'ok' : 'warn'}">${r.status === 'completed' ? 'Completado' : 'En curso'}</span></td>
+      <td>${r.step + 1}</td><td>${r.files || ''}</td><td>${fmt(r.updated_at)}</td><td><a class="btn sm" href="#/respuestas/${r.id}">Ver</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">Todavía nadie ha abierto este cuestionario.</td></tr>'}</table></div>`;
+}
+async function viewResponse(id) {
+  const r = await api('/responses/' + id); hdr();
+  let out = '';
+  for (const it of r.schema.items) {
+    if (it.kind === 'section') out += `<div class="sec">${esc(it.title)}</div>`;
+    else if (it.kind === 'question') {
+      const a = r.answers[it.id];
+      let txt = Array.isArray(a) ? a.join('\n') : (a ?? '');
+      const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
+      out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${txt === '' && !fl ? '<span class="muted">— sin respuesta —</span>' : esc(txt)}${fl}</div></div>`;
+    }
+  }
+  $.innerHTML = `<p><a href="#/s/${r.survey_id}">← ${esc(r.title)}</a></p>
+    <div class="spread"><div><h1>${esc(r.name)}</h1><p class="muted">${esc(r.email)} · ${r.status === 'completed' ? 'Completado ' + fmt(r.completed_at) : 'En curso, última actividad ' + fmt(r.updated_at)}</p></div>
+    <button class="danger" onclick="delResp(${r.id},${r.survey_id})">Eliminar respuesta</button></div>
+    <div class="card">${out}</div>`;
+}
+async function delResp(id, sid) { if (confirm('¿Eliminar esta respuesta y sus archivos? No se puede deshacer.')) { await api('/responses/' + id, { method: 'DELETE' }); location.hash = '#/s/' + sid; } }
+
+/* ---------- editor de preguntas ---------- */
+let ed = null;
+const TYPES = { text: 'Texto corto', textarea: 'Texto largo', email: 'Correo', phone: 'Teléfono', number: 'Número', url: 'Enlace (URL)', date: 'Fecha', radio: 'Opción única', checkbox: 'Casillas (varias)', file: 'Subir archivo' };
+async function viewEdit(id) {
+  ed = await api('/surveys/' + id); hdr(); drawEditor();
+}
+function drawEditor() {
+  const items = ed.schema.items;
+  $.innerHTML = `<p><a href="#/">← Cuestionarios</a></p>
+  <div class="card"><div class="row"><div style="flex:2;min-width:220px"><label class="s">Título</label><input type="text" id="t" value="${esc(ed.title)}"></div>
+    <div style="flex:1;min-width:180px"><label class="s">Enlace (/s/…)</label><input type="text" id="sl" value="${esc(ed.slug)}"></div></div>
+    <label class="s">Mensaje de agradecimiento (pantalla final y correo al cliente)</label><textarea id="th">${esc(ed.thanks_message)}</textarea>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="pub" ${ed.published ? 'checked' : ''}> Cuestionario activo (si lo pausas, el enlace deja de funcionar)</label></div>
+  <div id="items">${items.map(itemHtml).join('')}</div>
+  <div class="row"><button onclick="addItem('question')">+ Pregunta</button><button onclick="addItem('section')">+ Sección (nuevo paso)</button><button onclick="addItem('info')">+ Texto informativo</button></div><br>
+  <div class="row"><button class="primary" onclick="saveEd()">Guardar cambios</button><span id="ok" class="muted"></span><span style="flex:1"></span><button class="danger" onclick="delSurvey()">Eliminar cuestionario</button></div>`;
+}
+function itemHtml(it, i) {
+  const ctrl = `<div class="row" style="margin-top:8px"><button class="sm" onclick="mv(${i},-1)">↑</button><button class="sm" onclick="mv(${i},1)">↓</button><button class="sm danger" onclick="rm(${i})">Quitar</button></div>`;
+  if (it.kind === 'section') return `<div class="item" style="border-color:var(--brand)"><label class="s">SECCIÓN (cada sección es un paso del cuestionario)</label><input type="text" value="${esc(it.title)}" oninput="ed.schema.items[${i}].title=this.value">${ctrl}</div>`;
+  if (it.kind === 'info') return `<div class="item"><label class="s">TEXTO INFORMATIVO</label><textarea oninput="ed.schema.items[${i}].text=this.value">${esc(it.text)}</textarea>${ctrl}</div>`;
+  if (it.kind === 'page') return `<div class="item"><label class="s">Salto de página</label>${ctrl}</div>`;
+  const hasOpts = it.type === 'radio' || it.type === 'checkbox';
+  return `<div class="item"><div class="grid"><div><label class="s">Pregunta</label><input type="text" value="${esc(it.label)}" oninput="ed.schema.items[${i}].label=this.value"></div>
+    <div><label class="s">Tipo</label><select onchange="ed.schema.items[${i}].type=this.value;drawEditor()">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${it.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+    ${hasOpts ? `<label class="s">Opciones (una por línea)</label><textarea oninput="ed.schema.items[${i}].options=this.value.split('\\n').map(s=>s.trim()).filter(Boolean)">${esc((it.options || []).join('\n'))}</textarea>
+      <label class="row"><input type="checkbox" ${it.other ? 'checked' : ''} onchange="ed.schema.items[${i}].other=this.checked"> Incluir opción "Otro" con texto libre</label>` : ''}
+    ${['text', 'textarea', 'email', 'phone', 'number', 'url'].includes(it.type) ? `<label class="s">Texto de ejemplo (opcional)</label><input type="text" value="${esc(it.placeholder || '')}" oninput="ed.schema.items[${i}].placeholder=this.value">` : ''}
+    <label class="row" style="margin-top:6px"><input type="checkbox" ${it.required ? 'checked' : ''} onchange="ed.schema.items[${i}].required=this.checked"> Obligatoria</label>${ctrl}</div>`;
+}
+function addItem(kind) {
+  const base = { question: { kind: 'question', type: 'text', label: '', required: false }, section: { kind: 'section', title: '' }, info: { kind: 'info', text: '' } }[kind];
+  ed.schema.items.push({ ...base }); drawEditor(); window.scrollTo(0, document.body.scrollHeight);
+}
+function mv(i, d) { const a = ed.schema.items, j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; drawEditor(); }
+function rm(i) { if (confirm('¿Quitar este elemento? Las respuestas ya guardadas de esa pregunta se conservan en la base de datos.')) { ed.schema.items.splice(i, 1); drawEditor(); } }
+async function saveEd() {
+  const body = { title: t.value, slug: sl.value, thanks_message: th.value, published: pub.checked, schema: ed.schema };
+  try { ed = await api('/surveys/' + ed.id, { method: 'PUT', body: JSON.stringify(body) }); document.getElementById('ok').textContent = '✓ Guardado'; drawEditorKeepMsg(); }
+  catch (e) { document.getElementById('ok').textContent = '⚠ ' + e.message; }
+}
+function drawEditorKeepMsg() { const y = scrollY; drawEditor(); document.getElementById('ok').textContent = '✓ Guardado'; scrollTo(0, y); }
+async function delSurvey() {
+  if (prompt('Esto elimina el cuestionario y TODAS sus respuestas. Escribe ELIMINAR para confirmar:') === 'ELIMINAR') { await api('/surveys/' + ed.id, { method: 'DELETE' }); location.hash = '#/'; }
+}
+
+async function route() {
+  const h = location.hash.replace(/^#\/?/, '').split('/');
+  try {
+    await api('/me');
+    if (h[0] === 's') return viewResponses(h[1]);
+    if (h[0] === 'respuestas') return viewResponse(h[1]);
+    if (h[0] === 'editar') return viewEdit(h[1]);
+    viewList();
+  } catch (e) { if (e.message !== 'auth') $.innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
+}
+window.onhashchange = route; route();
+</script>
+</body>
+</html>

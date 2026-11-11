@@ -1,0 +1,346 @@
+const express = require('express');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const { Pool } = require('pg');
+
+const PORT = process.env.PORT || 3000;
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const SECRET = process.env.SESSION_SECRET || crypto.createHash('sha256').update('encuesty:' + ADMIN_PASSWORD).digest('hex');
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 15);
+const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined,
+});
+
+const app = express();
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '2mb' }));
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_MB * 1024 * 1024 } });
+
+/* ---------- utilidades ---------- */
+const sign = (v) => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
+const makeToken = (payload) => { const b = Buffer.from(JSON.stringify(payload)).toString('base64url'); return b + '.' + sign(b); };
+const readToken = (t) => {
+  if (!t || !t.includes('.')) return null;
+  const [b, s] = t.split('.');
+  const good = sign(b);
+  if (s.length !== good.length || !crypto.timingSafeEqual(Buffer.from(s), Buffer.from(good))) return null;
+  try { return JSON.parse(Buffer.from(b, 'base64url').toString()); } catch { return null; }
+};
+const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((c) => c.trim().split('=')).filter((x) => x[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
+const setCookie = (res, name, val, maxAgeDays) =>
+  res.append('Set-Cookie', `${name}=${encodeURIComponent(val)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeDays * 86400}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+const slugify = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'cuestionario';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const baseUrl = (req) => APP_URL || `${req.protocol}://${req.get('host')}`;
+
+const attempts = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (attempts.get(key) || []).filter((t) => now - t < windowMs);
+  arr.push(now); attempts.set(key, arr);
+  return arr.length > max;
+}
+
+/* ---------- correo (Resend) ---------- */
+async function sendMail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.FROM_EMAIL;
+  if (!key || !from) { console.log('[mail omitido: falta RESEND_API_KEY/FROM_EMAIL]', to, subject); return false; }
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+    if (!r.ok) console.error('[mail error]', r.status, await r.text());
+    return r.ok;
+  } catch (e) { console.error('[mail error]', e.message); return false; }
+}
+
+/* ---------- base de datos ---------- */
+async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS surveys (
+      id SERIAL PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      schema JSONB NOT NULL DEFAULT '{"items":[]}',
+      thanks_message TEXT NOT NULL DEFAULT '¡Gracias! Recibimos tus respuestas.',
+      published BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS clients (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS responses (
+      id SERIAL PRIMARY KEY,
+      survey_id INT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+      client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      answers JSONB NOT NULL DEFAULT '{}',
+      step INT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'in_progress',
+      started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      completed_at TIMESTAMPTZ,
+      UNIQUE (survey_id, client_id)
+    );
+    CREATE TABLE IF NOT EXISTS files (
+      id SERIAL PRIMARY KEY,
+      response_id INT NOT NULL REFERENCES responses(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INT NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  // sembrar el cuestionario inicial (Ventas Automatizadas) si no hay ninguno
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM surveys');
+  if (rows[0].n === 0) {
+    const seedPath = path.join(__dirname, 'seed-ventas.json');
+    if (fs.existsSync(seedPath)) {
+      const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+      await pool.query('INSERT INTO surveys (slug,title,schema,thanks_message) VALUES ($1,$2,$3,$4)', [
+        'ventas-automatizadas', seed.title, { items: withIds(seed.items) }, '¡Listo, gracias! Recibimos tus respuestas y nos pondremos en contacto contigo.',
+      ]);
+      console.log('Cuestionario inicial creado: /s/ventas-automatizadas');
+    }
+  }
+}
+function withIds(items) {
+  let n = 0;
+  return items.map((it) => (it.kind === 'question' && !it.id ? { ...it, id: 'q' + ++n + '_' + crypto.randomBytes(2).toString('hex') } : it));
+}
+
+/* ---------- API pública (cliente) ---------- */
+async function getSurveyBySlug(slug) {
+  const { rows } = await pool.query('SELECT * FROM surveys WHERE slug=$1', [slug]);
+  return rows[0];
+}
+const publicSurvey = (s) => ({ title: s.title, slug: s.slug, schema: s.schema, thanks: s.thanks_message });
+
+app.get('/api/s/:slug', async (req, res) => {
+  const s = await getSurveyBySlug(req.params.slug);
+  if (!s || !s.published) return res.status(404).json({ error: 'Este cuestionario no existe o no está disponible.' });
+  res.json({ title: s.title, thanks: s.thanks_message });
+});
+
+// Entrar con correo (y nombre si es nuevo)
+app.post('/api/s/:slug/start', async (req, res) => {
+  try {
+    if (rateLimit('start:' + req.ip, 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.' });
+    const s = await getSurveyBySlug(req.params.slug);
+    if (!s || !s.published) return res.status(404).json({ error: 'Este cuestionario no existe o no está disponible.' });
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const name = String(req.body.name || '').trim();
+    if (!validEmail(email)) return res.status(400).json({ error: 'Escribe un correo válido.' });
+
+    let { rows } = await pool.query('SELECT * FROM clients WHERE email=$1', [email]);
+    let client = rows[0];
+    if (!client) {
+      if (!name) return res.json({ needName: true });
+      client = (await pool.query('INSERT INTO clients (email,name) VALUES ($1,$2) RETURNING *', [email, name.slice(0, 120)])).rows[0];
+    }
+    const r = (await pool.query(
+      `INSERT INTO responses (survey_id, client_id) VALUES ($1,$2)
+       ON CONFLICT (survey_id, client_id) DO UPDATE SET survey_id=EXCLUDED.survey_id RETURNING *`,
+      [s.id, client.id])).rows[0];
+    setCookie(res, 'enc_' + s.id, makeToken({ r: r.id, s: s.id }), 90);
+    res.json({ ok: true, name: client.name, ...(await responsePayload(s, r)) });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error del servidor.' }); }
+});
+
+async function responsePayload(s, r) {
+  const files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  return { survey: publicSurvey(s), answers: r.answers, step: r.step, status: r.status, files };
+}
+
+// Autenticación del cliente por cookie
+async function clientAuth(req, res, next) {
+  const s = await getSurveyBySlug(req.params.slug);
+  if (!s) return res.status(404).json({ error: 'No existe.' });
+  const t = readToken(cookies(req)['enc_' + s.id]);
+  if (!t || t.s !== s.id) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
+  const r = (await pool.query('SELECT r.*, c.email, c.name FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.id=$1', [t.r])).rows[0];
+  if (!r) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
+  req.survey = s; req.resp = r; next();
+}
+
+app.get('/api/s/:slug/me', clientAuth, async (req, res) => {
+  res.json({ ok: true, name: req.resp.name, ...(await responsePayload(req.survey, req.resp)) });
+});
+
+// Guardado automático
+app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
+  const answers = req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
+  const step = Number.isInteger(req.body.step) ? req.body.step : req.resp.step;
+  // se mezcla con lo existente para que un guardado atrasado no borre respuestas
+  await pool.query(
+    `UPDATE responses SET answers = answers || $1::jsonb, step=$2, updated_at=now(),
+     status = CASE WHEN status='completed' THEN 'completed' ELSE 'in_progress' END WHERE id=$3`,
+    [JSON.stringify(answers), step, req.resp.id]);
+  res.json({ ok: true, savedAt: new Date().toISOString() });
+});
+
+app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió el archivo.' });
+  const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
+  const { rows } = await pool.query(
+    'INSERT INTO files (response_id, question_id, filename, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, question_id, filename, size',
+    [req.resp.id, req.params.qid, filename, req.file.mimetype, req.file.size, req.file.buffer]);
+  await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [req.resp.id]);
+  res.json({ ok: true, file: rows[0] });
+});
+app.delete('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
+  await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2', [req.params.id, req.resp.id]);
+  res.json({ ok: true });
+});
+app.use('/api/s/:slug/upload', (err, req, res, next) => {
+  if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` });
+  next(err);
+});
+
+app.post('/api/s/:slug/complete', clientAuth, async (req, res) => {
+  await pool.query(
+    `UPDATE responses SET status='completed', completed_at=COALESCE(completed_at, now()), updated_at=now()
+     WHERE id=$1`, [req.resp.id]);
+  const first = !req.resp.completed_at;
+  if (first) {
+    const s = req.survey, c = req.resp;
+    const link = `${baseUrl(req)}/admin#/respuestas/${c.id}`;
+    sendMail({ to: c.email, subject: `Recibimos tus respuestas — ${s.title}`,
+      html: `<p>Hola ${esc(c.name)},</p><p>${esc(s.thanks_message)}</p><p>Si necesitas cambiar algo, vuelve a abrir el enlace del cuestionario con tu correo y podrás editar tus respuestas.</p>` });
+    if (ADMIN_EMAIL) sendMail({ to: ADMIN_EMAIL, subject: `Nuevo cuestionario completado: ${c.name} — ${s.title}`,
+      html: `<p><b>${esc(c.name)}</b> (${esc(c.email)}) completó <b>${esc(s.title)}</b>.</p><p><a href="${link}">Ver respuestas</a></p>` });
+  }
+  res.json({ ok: true });
+});
+
+/* ---------- Admin ---------- */
+function adminAuth(req, res, next) {
+  const t = readToken(cookies(req).enc_admin);
+  if (t && t.admin && t.exp > Date.now()) return next();
+  res.status(401).json({ error: 'No autorizado' });
+}
+app.post('/api/admin/login', (req, res) => {
+  if (rateLimit('login:' + req.ip, 8, 15 * 60 * 1000)) return res.status(429).json({ error: 'Demasiados intentos. Espera 15 minutos.' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const pw = String(req.body.password || '');
+  const a = crypto.createHash('sha256').update(pw).digest();
+  const b = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest();
+  if (!ADMIN_PASSWORD || email !== ADMIN_EMAIL || !crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
+  setCookie(res, 'enc_admin', makeToken({ admin: true, exp: Date.now() + 7 * 864e5 }), 7);
+  res.json({ ok: true });
+});
+app.post('/api/admin/logout', (req, res) => { setCookie(res, 'enc_admin', '', 0); res.json({ ok: true }); });
+app.get('/api/admin/me', adminAuth, (req, res) => res.json({ ok: true, email: ADMIN_EMAIL }));
+
+app.get('/api/admin/surveys', adminAuth, async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT s.id, s.slug, s.title, s.published, s.created_at,
+      count(r.id)::int AS total,
+      count(r.id) FILTER (WHERE r.status='completed')::int AS completed
+    FROM surveys s LEFT JOIN responses r ON r.survey_id=s.id GROUP BY s.id ORDER BY s.created_at DESC`);
+  res.json({ surveys: rows, baseUrl: baseUrl(req) });
+});
+app.post('/api/admin/surveys', adminAuth, async (req, res) => {
+  const title = String(req.body.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Falta el título.' });
+  let slug = slugify(req.body.slug || title);
+  const exists = (await pool.query('SELECT 1 FROM surveys WHERE slug=$1', [slug])).rowCount;
+  if (exists) slug += '-' + crypto.randomBytes(2).toString('hex');
+  const items = withIds(Array.isArray(req.body.items) ? req.body.items : []);
+  const { rows } = await pool.query('INSERT INTO surveys (slug,title,schema) VALUES ($1,$2,$3) RETURNING *', [slug, title, { items }]);
+  res.json(rows[0]);
+});
+app.get('/api/admin/surveys/:id', adminAuth, async (req, res) => {
+  const s = (await pool.query('SELECT * FROM surveys WHERE id=$1', [req.params.id])).rows[0];
+  if (!s) return res.status(404).json({ error: 'No existe' });
+  res.json(s);
+});
+app.put('/api/admin/surveys/:id', adminAuth, async (req, res) => {
+  const { title, slug, schema, thanks_message, published } = req.body;
+  const cur = (await pool.query('SELECT * FROM surveys WHERE id=$1', [req.params.id])).rows[0];
+  if (!cur) return res.status(404).json({ error: 'No existe' });
+  const newSlug = slug ? slugify(slug) : cur.slug;
+  const dup = (await pool.query('SELECT 1 FROM surveys WHERE slug=$1 AND id<>$2', [newSlug, cur.id])).rowCount;
+  if (dup) return res.status(400).json({ error: 'Ese enlace ya está en uso.' });
+  const items = schema && Array.isArray(schema.items) ? withIds(schema.items) : cur.schema.items;
+  const { rows } = await pool.query(
+    'UPDATE surveys SET title=$1, slug=$2, schema=$3, thanks_message=$4, published=$5 WHERE id=$6 RETURNING *',
+    [title ?? cur.title, newSlug, { items }, thanks_message ?? cur.thanks_message, published ?? cur.published, cur.id]);
+  res.json(rows[0]);
+});
+app.delete('/api/admin/surveys/:id', adminAuth, async (req, res) => {
+  await pool.query('DELETE FROM surveys WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/surveys/:id/responses', adminAuth, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT r.id, r.status, r.step, r.started_at, r.updated_at, r.completed_at, c.name, c.email,
+       (SELECT count(*)::int FROM files f WHERE f.response_id=r.id) AS files
+     FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.survey_id=$1 ORDER BY r.updated_at DESC`, [req.params.id]);
+  res.json({ responses: rows });
+});
+app.get('/api/admin/responses/:id', adminAuth, async (req, res) => {
+  const r = (await pool.query(
+    `SELECT r.*, c.name, c.email, s.title, s.schema, s.slug FROM responses r
+     JOIN clients c ON c.id=r.client_id JOIN surveys s ON s.id=r.survey_id WHERE r.id=$1`, [req.params.id])).rows[0];
+  if (!r) return res.status(404).json({ error: 'No existe' });
+  r.files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  res.json(r);
+});
+app.delete('/api/admin/responses/:id', adminAuth, async (req, res) => {
+  await pool.query('DELETE FROM responses WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+});
+app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
+  const f = (await pool.query('SELECT * FROM files WHERE id=$1', [req.params.id])).rows[0];
+  if (!f) return res.status(404).end();
+  res.setHeader('Content-Type', f.mime);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
+  res.send(f.data);
+});
+
+app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
+  const s = (await pool.query('SELECT * FROM surveys WHERE id=$1', [req.params.id])).rows[0];
+  if (!s) return res.status(404).end();
+  const qs = s.schema.items.filter((i) => i.kind === 'question');
+  const rows = (await pool.query(
+    `SELECT r.*, c.name, c.email, (SELECT string_agg(f.filename, ' | ') FROM files f WHERE f.response_id=r.id) AS filenames
+     FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.survey_id=$1 ORDER BY r.started_at`, [s.id])).rows;
+  const cell = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const head = ['Nombre', 'Correo', 'Estado', 'Inicio', 'Última actualización', 'Completado', ...qs.map((q) => q.label), 'Archivos'];
+  const lines = [head.map(cell).join(',')];
+  for (const r of rows) {
+    const vals = qs.map((q) => { const a = r.answers[q.id]; return Array.isArray(a) ? a.join('; ') : a; });
+    lines.push([r.name, r.email, r.status === 'completed' ? 'Completado' : 'En curso', r.started_at.toISOString(), r.updated_at.toISOString(), r.completed_at ? r.completed_at.toISOString() : '', ...vals, r.filenames].map(cell).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${s.slug}.csv"`);
+  res.send('﻿' + lines.join('\r\n'));
+});
+
+/* ---------- páginas ---------- */
+const pub = path.join(__dirname, 'public');
+app.use('/static', express.static(pub, { maxAge: '5m' }));
+app.get('/health', (req, res) => res.send('ok'));
+app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
+app.get('/s/:slug', (req, res) => res.sendFile(path.join(pub, 'survey.html')));
+app.get('/', (req, res) => res.redirect('/admin'));
+
+app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Error del servidor.' }); });
+
+initDb().then(() => app.listen(PORT, () => console.log('Encuesty escuchando en ' + PORT))).catch((e) => { console.error('No se pudo iniciar:', e); process.exit(1); });
