@@ -289,7 +289,7 @@ function projectCard(id, p, i) {
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
     <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
     <div class="pj-media">
-      <div class="pj-mt">Brochures, precios, planos o fotos</div>
+      <div class="pj-mt">Brochures, listado de precios, planos o fotos</div>
       <div class="pj-mrow"><span class="pj-mlab">Subir</span><label class="pj-up">📎 Elegir archivos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label></div>
       <div class="file-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(fileRow).join('')}</div>
       <div class="pj-mrow"><span class="pj-mlab">Pegar enlace</span><input type="text" class="pj-link-in" data-linkin="${i}" placeholder="https://drive.google.com/… (Drive, Dropbox, YouTube, etc.)" aria-label="Pegar enlace"><button type="button" class="pj-addlink" data-link-add="${i}">Añadir</button></div>
