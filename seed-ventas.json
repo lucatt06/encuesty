@@ -279,12 +279,6 @@
    "label": "Proyectos en carpeta"
   },
   {
-   "kind": "question",
-   "type": "file",
-   "required": false,
-   "label": "Brochures, listas de precios, planos o presentaciones de tus proyectos (opcional)"
-  },
-  {
    "kind": "section",
    "title": "11 · Cierre"
   },

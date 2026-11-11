@@ -99,6 +99,10 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-card .opt.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .am-other{margin-top:8px}
 @media(max-width:620px){.pj-grid3{grid-template-columns:1fr}.un-row{grid-template-columns:1fr 1fr}.un-row input:first-child{grid-column:1/-1}}
+.pj-media{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.pj-up{display:inline-block;cursor:pointer;border:1px dashed var(--brand);color:var(--brand);border-radius:999px;padding:6px 16px;font-size:14px;font-weight:600}
+.pj-up:hover{background:var(--cream)}
+.pj-card .file-list{margin:6px 0 0}.pj-card .file-item{padding:5px 10px;margin:3px 0;font-size:13px}
 </style>
 </head>
 <body>
@@ -244,11 +248,14 @@ function renderItem(it) {
 /* ---------- fichas de proyectos ---------- */
 const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
 const newUnit = () => ({ type: '', price: '', size: '' });
-const newProject = () => ({ name: '', location: '', type: '', units: [newUnit()], delivery: '', payment: '', amenities: [], amenities_other: '' });
+const uid = () => 'p' + Math.random().toString(36).slice(2, 8);
+const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], delivery: '', payment: '', amenities: [], amenities_other: '' });
 function getProjects(id) {
   let a = state.answers[id];
   if (!Array.isArray(a) || !a.length) { a = [newProject()]; state.answers[id] = a; }
-  a.forEach(p => { if (!Array.isArray(p.units) || !p.units.length) p.units = [newUnit()]; if (!Array.isArray(p.amenities)) p.amenities = []; });
+  let fixed = false;
+  a.forEach(p => { if (!p.id) { p.id = uid(); fixed = true; } if (!Array.isArray(p.units) || !p.units.length) p.units = [newUnit()]; if (!Array.isArray(p.amenities)) p.amenities = []; });
+  if (fixed) { pending[id] = a; schedule(); }
   return a;
 }
 function projectsInner(id) {
@@ -273,12 +280,14 @@ function projectCard(id, p, i) {
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
     <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
+    <div class="pj-media"><label class="pj-up">📎 Subir brochures, precios, planos o fotos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label><span class="muted" style="font-size:12px">Multimedia de este proyecto · máx. 15 MB por archivo</span></div>
+    <div class="file-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(fileRow).join('')}</div>
   </div>`;
 }
 function bindProjects() {
   document.querySelectorAll('[data-pj]').forEach(root => {
     const id = root.dataset.pj;
-    const redraw = (focusSel) => { root.innerHTML = projectsInner(id); bindProjects(); if (focusSel) root.querySelector(focusSel)?.focus(); };
+    const redraw = (focusSel) => { root.innerHTML = projectsInner(id); bind(); if (focusSel) root.querySelector(focusSel)?.focus(); };
     root.oninput = root.onchange = e => {
       const t = e.target; if (t.dataset.p === undefined) return;
       const arr = getProjects(id), p = arr[+t.dataset.p];
@@ -292,7 +301,15 @@ function bindProjects() {
       const b = e.target.closest('button'); if (!b) return;
       const arr = getProjects(id);
       if (b.dataset.pjAdd) { arr.push(newProject()); setAns(id, arr); redraw(`.pj-card:last-of-type [data-f=name]`); }
-      else if (b.dataset.pjDel) { if (confirm('¿Quitar este proyecto y su información?')) { arr.splice(+b.dataset.pjDel, 1); setAns(id, arr); redraw(); } }
+      else if (b.dataset.pjDel) {
+        const pr = arr[+b.dataset.pjDel], fs = state.files.filter(f => f.question_id === id + '#' + pr.id);
+        if (confirm('¿Quitar este proyecto' + (fs.length ? ', su información y sus ' + fs.length + ' archivo(s)' : ' y su información') + '?')) {
+          Promise.all(fs.map(f => api('/file/' + f.id, { method: 'DELETE' }).catch(() => {}))).then(() => {
+            state.files = state.files.filter(f => f.question_id !== id + '#' + pr.id);
+            arr.splice(arr.indexOf(pr), 1); setAns(id, arr); redraw(); updateProgress();
+          });
+        }
+      }
       else if (b.dataset.unAdd !== undefined) { const i = +b.dataset.unAdd; arr[i].units.push(newUnit()); setAns(id, arr); redraw(`.pj-card:nth-of-type(${i + 1}) .un-row:last-of-type input`); }
       else if (b.dataset.unDel) { const [i, j] = b.dataset.unDel.split(':').map(Number); arr[i].units.splice(j, 1); setAns(id, arr); redraw(); }
     };
