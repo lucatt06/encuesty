@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SECRET = process.env.SESSION_SECRET || crypto.createHash('sha256').update('encuesty:' + ADMIN_PASSWORD).digest('hex');
-const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 15);
+const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 50); // solo aplica sin bucket S3 (desarrollo local)
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 
 const pool = new Pool({
@@ -20,7 +20,39 @@ const pool = new Pool({
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_MB * 1024 * 1024 } });
+/* ---------- almacenamiento de archivos ----------
+   Con bucket S3 (Railway): los archivos se transmiten directo al bucket, sin límite de tamaño.
+   Sin bucket (desarrollo local): se guardan en la base de datos con un límite. */
+const S3_ON = !!(process.env.S3_BUCKET && process.env.S3_ENDPOINT && process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY);
+let s3, S3 = {};
+if (S3_ON) {
+  S3 = { ...require('@aws-sdk/client-s3'), ...require('@aws-sdk/lib-storage'), ...require('@aws-sdk/s3-request-presigner') };
+  s3 = new S3.S3Client({
+    region: process.env.S3_REGION || 'auto',
+    endpoint: process.env.S3_ENDPOINT,
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+    credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID, secretAccessKey: process.env.S3_SECRET_ACCESS_KEY },
+    requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
+  });
+}
+const s3Storage = {
+  _handleFile(req, file, cb) {
+    const key = `r${req.resp.id}/${crypto.randomUUID()}`;
+    let size = 0; file.stream.on('data', (c) => { size += c.length; });
+    new S3.Upload({ client: s3, queueSize: 4, partSize: 16 * 1024 * 1024,
+      params: { Bucket: process.env.S3_BUCKET, Key: key, Body: file.stream, ContentType: file.mimetype } })
+      .done().then(() => cb(null, { key, size })).catch(cb);
+  },
+  _removeFile(req, file, cb) { s3Delete([file.key]).then(() => cb(null), cb); },
+};
+async function s3Delete(keys) {
+  if (!S3_ON) return;
+  for (const Key of keys.filter(Boolean)) {
+    try { await s3.send(new S3.DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key })); } catch (e) { console.error('[S3 borrar]', Key, e.message); }
+  }
+}
+const keysOf = async (where, arg) => (await pool.query(`SELECT s3_key FROM files WHERE s3_key IS NOT NULL AND ${where}`, [arg])).rows.map((r) => r.s3_key);
+const upload = S3_ON ? multer({ storage: s3Storage }) : multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_MB * 1024 * 1024 } });
 
 /* ---------- utilidades ---------- */
 const sign = (v) => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
@@ -45,7 +77,7 @@ function fmtProjects(arr, sep, off = 0) {
   return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
     const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
     const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
-    return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`].join(sep.in);
+    return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`, `Enlaces: ${(p.links || []).join(', ')}`].join(sep.in);
   }).join(sep.out);
 }
 const attempts = new Map();
@@ -118,9 +150,12 @@ async function initDb() {
       filename TEXT NOT NULL,
       mime TEXT NOT NULL,
       size INT NOT NULL,
-      data BYTEA NOT NULL,
+      data BYTEA,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
+    ALTER TABLE files ALTER COLUMN data DROP NOT NULL;
+    ALTER TABLE files ALTER COLUMN size TYPE BIGINT;
   `);
   // sembrar el cuestionario inicial (Ventas Automatizadas) si no hay ninguno
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM surveys');
@@ -214,18 +249,20 @@ app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (r
   if (!req.file) return res.status(400).json({ error: 'No se recibió el archivo.' });
   const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
   const { rows } = await pool.query(
-    'INSERT INTO files (response_id, question_id, filename, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, question_id, filename, size',
-    [req.resp.id, req.params.qid, filename, req.file.mimetype, req.file.size, req.file.buffer]);
+    'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, question_id, filename, size',
+    [req.resp.id, req.params.qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null]);
   await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [req.resp.id]);
   res.json({ ok: true, file: rows[0] });
 });
 app.delete('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
-  await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2', [req.params.id, req.resp.id]);
+  const { rows } = await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2 RETURNING s3_key', [req.params.id, req.resp.id]);
+  await s3Delete(rows.map((r) => r.s3_key));
   res.json({ ok: true });
 });
 app.use('/api/s/:slug/upload', (err, req, res, next) => {
   if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: `El archivo supera el máximo de ${MAX_FILE_MB} MB.` });
-  next(err);
+  console.error('[subida]', err && err.message);
+  res.status(500).json({ error: 'No se pudo subir el archivo. Inténtalo de nuevo.' });
 });
 
 app.post('/api/s/:slug/complete', clientAuth, async (req, res) => {
@@ -300,7 +337,9 @@ app.put('/api/admin/surveys/:id', adminAuth, async (req, res) => {
   res.json(rows[0]);
 });
 app.delete('/api/admin/surveys/:id', adminAuth, async (req, res) => {
+  const keys = await keysOf('response_id IN (SELECT id FROM responses WHERE survey_id=$1)', req.params.id);
   await pool.query('DELETE FROM surveys WHERE id=$1', [req.params.id]);
+  await s3Delete(keys);
   res.json({ ok: true });
 });
 
@@ -320,12 +359,19 @@ app.get('/api/admin/responses/:id', adminAuth, async (req, res) => {
   res.json(r);
 });
 app.delete('/api/admin/responses/:id', adminAuth, async (req, res) => {
+  const keys = await keysOf('response_id=$1', req.params.id);
   await pool.query('DELETE FROM responses WHERE id=$1', [req.params.id]);
+  await s3Delete(keys);
   res.json({ ok: true });
 });
 app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
   const f = (await pool.query('SELECT * FROM files WHERE id=$1', [req.params.id])).rows[0];
   if (!f) return res.status(404).end();
+  if (f.s3_key) {
+    const url = await S3.getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: f.s3_key,
+      ResponseContentType: f.mime, ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(f.filename)}` }), { expiresIn: 300 });
+    return res.redirect(url);
+  }
   res.setHeader('Content-Type', f.mime);
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
   res.send(f.data);

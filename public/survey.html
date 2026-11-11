@@ -103,6 +103,14 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-up{display:inline-block;cursor:pointer;border:1px dashed var(--brand);color:var(--brand);border-radius:999px;padding:6px 16px;font-size:14px;font-weight:600}
 .pj-up:hover{background:var(--cream)}
 .pj-card .file-list{margin:6px 0 0}.pj-card .file-item{padding:5px 10px;margin:3px 0;font-size:13px}
+.pj-media{display:block;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.pj-mt{font-weight:700;font-size:14px;margin-bottom:6px}
+.pj-mrow{display:flex;align-items:center;gap:10px;margin:6px 0}
+.pj-mlab{flex:0 0 92px;font-size:13px;font-weight:600;color:var(--muted)}
+.pj-link-in{flex:1;min-width:0}
+.pj-addlink{padding:7px 16px;font-size:14px;color:var(--brand);border-color:var(--brand)}
+.link-list .file-item a{color:var(--navy);word-break:break-all}
+@media(max-width:620px){.pj-mrow{flex-wrap:wrap}.pj-mlab{flex-basis:100%}}
 </style>
 </head>
 <body>
@@ -249,12 +257,12 @@ function renderItem(it) {
 const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
 const newUnit = () => ({ type: '', price: '', size: '' });
 const uid = () => 'p' + Math.random().toString(36).slice(2, 8);
-const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], delivery: '', payment: '', amenities: [], amenities_other: '' });
+const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], links: [], delivery: '', payment: '', amenities: [], amenities_other: '' });
 function getProjects(id) {
   let a = state.answers[id];
   if (!Array.isArray(a) || !a.length) { a = [newProject()]; state.answers[id] = a; }
   let fixed = false;
-  a.forEach(p => { if (!p.id) { p.id = uid(); fixed = true; } if (!Array.isArray(p.units) || !p.units.length) p.units = [newUnit()]; if (!Array.isArray(p.amenities)) p.amenities = []; });
+  a.forEach(p => { if (!p.id) { p.id = uid(); fixed = true; } if (!Array.isArray(p.units) || !p.units.length) p.units = [newUnit()]; if (!Array.isArray(p.amenities)) p.amenities = []; if (!Array.isArray(p.links)) p.links = []; });
   if (fixed) { pending[id] = a; schedule(); }
   return a;
 }
@@ -280,8 +288,13 @@ function projectCard(id, p, i) {
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
     <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
-    <div class="pj-media"><label class="pj-up">📎 Subir brochures, precios, planos o fotos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label><span class="muted" style="font-size:12px">Multimedia de este proyecto · máx. 15 MB por archivo</span></div>
-    <div class="file-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(fileRow).join('')}</div>
+    <div class="pj-media">
+      <div class="pj-mt">Brochures, precios, planos o fotos</div>
+      <div class="pj-mrow"><span class="pj-mlab">Subir</span><label class="pj-up">📎 Elegir archivos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label></div>
+      <div class="file-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(fileRow).join('')}</div>
+      <div class="pj-mrow"><span class="pj-mlab">Pegar enlace</span><input type="text" class="pj-link-in" data-linkin="${i}" placeholder="https://drive.google.com/… (Drive, Dropbox, YouTube, etc.)" aria-label="Pegar enlace"><button type="button" class="pj-addlink" data-link-add="${i}">Añadir</button></div>
+      <div class="link-list">${p.links.map((l, k) => `<div class="file-item"><span>🔗 <a href="${esc(l)}" target="_blank" rel="noopener">${esc(l)}</a></span><button type="button" data-link-del="${i}:${k}">Quitar</button></div>`).join('')}</div>
+    </div>
   </div>`;
 }
 function bindProjects() {
@@ -297,9 +310,19 @@ function bindProjects() {
       else p[t.dataset.f] = t.value;
       setAns(id, arr);
     };
+    const addLink = (i) => {
+      const arr = getProjects(id), inp = root.querySelector(`[data-linkin="${i}"]`); let v = (inp.value || '').trim(); if (!v) return;
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) v = 'https://' + v;
+      try { const u = new URL(v); if (!/^https?:$/.test(u.protocol) || !u.hostname.includes('.')) throw 0; v = u.href; }
+      catch { inp.style.borderColor = 'var(--err)'; inp.focus(); return; }
+      arr[i].links.push(v); setAns(id, arr); redraw(`[data-linkin="${i}"]`);
+    };
+    root.onkeydown = e => { if (e.key === 'Enter' && e.target.dataset.linkin !== undefined) { e.preventDefault(); addLink(+e.target.dataset.linkin); } };
     root.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
       const arr = getProjects(id);
+      if (b.dataset.linkAdd !== undefined) return addLink(+b.dataset.linkAdd);
+      if (b.dataset.linkDel) { const [i, k] = b.dataset.linkDel.split(':').map(Number); arr[i].links.splice(k, 1); setAns(id, arr); return redraw(); }
       if (b.dataset.pjAdd) { arr.push(newProject()); setAns(id, arr); redraw(`.pj-card:last-of-type [data-f=name]`); }
       else if (b.dataset.pjDel) {
         const pr = arr[+b.dataset.pjDel], fs = state.files.filter(f => f.question_id === id + '#' + pr.id);
@@ -398,17 +421,27 @@ window.addEventListener('beforeunload', () => {
 });
 
 /* ---------- archivos ---------- */
+function xhrUpload(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest(), fd = new FormData(); fd.append('file', file);
+    x.open('POST', url); x.withCredentials = true;
+    x.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status >= 200 && x.status < 300 ? resolve(j) : reject(new Error(j.error || 'No se pudo subir el archivo.')); };
+    x.onerror = () => reject(new Error('Se perdió la conexión. Inténtalo de nuevo.'));
+    x.send(fd);
+  });
+}
 async function uploadFiles(input) {
-  const qid = input.dataset.file, list = document.getElementById('fl-' + qid);
-  for (const file of input.files) {
-    const row = document.createElement('div'); row.className = 'file-item'; row.textContent = 'Subiendo ' + file.name + '…'; list.appendChild(row);
+  const qid = input.dataset.file, list = document.getElementById('fl-' + qid), files = [...input.files];
+  input.value = '';
+  for (const file of files) {
+    const row = document.createElement('div'); row.className = 'file-item'; row.textContent = 'Subiendo ' + file.name + '… 0%'; list.appendChild(row);
     try {
-      const fd = new FormData(); fd.append('file', file);
-      const r = await api('/upload/' + encodeURIComponent(qid), { method: 'POST', body: fd });
+      const r = await xhrUpload('/api/s/' + slug + '/upload/' + encodeURIComponent(qid), file, pct => { row.textContent = 'Subiendo ' + file.name + '… ' + pct + '%'; });
       state.files.push(r.file); row.outerHTML = fileRow(r.file); updateProgress();
     } catch (e) { row.textContent = '⚠ ' + file.name + ': ' + e.message; row.style.color = 'var(--err)'; }
   }
-  input.value = ''; bind();
+  bind();
 }
 async function delFile(id) {
   await api('/file/' + id, { method: 'DELETE' });
