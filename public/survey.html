@@ -111,6 +111,8 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-addlink{padding:7px 16px;font-size:14px;color:var(--brand);border-color:var(--brand)}
 .link-list .file-item a{color:var(--navy);word-break:break-all}
 @media(max-width:620px){.pj-mrow{flex-wrap:wrap}.pj-mlab{flex-basis:100%}}
+.pj-addunit{display:inline-block;margin:2px 0 4px;padding:5px 16px;font-size:13px;color:var(--brand);background:#fff;border:1px dashed var(--brand);border-radius:999px}
+.pj-addunit:hover{background:var(--cream)}
 </style>
 </head>
 <body>
@@ -277,13 +279,14 @@ function projectCard(id, p, i) {
     <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad, zona o dirección')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
       <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
-    <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><button type="button" class="pj-link" data-un-add="${i}">+ Añadir tipo de unidad</button></div>
+    <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label></div>
     <div class="muted" style="font-size:12px;margin:0 0 6px">Una fila por cada tipo de unidad. Ejemplo: una fila para el de 2 habitaciones y otra para el de 3.</div>
     ${p.units.map((u, j) => `<div class="un-row">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo de unidad · Ej: Apto 2 hab" aria-label="Tipo de unidad">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (95 m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
+    <button type="button" class="pj-addunit" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
     <label class="pj-l">Plan de pago</label>
     <textarea rows="2" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
@@ -334,7 +337,7 @@ function bindProjects() {
           });
         }
       }
-      else if (b.dataset.unAdd !== undefined) { const i = +b.dataset.unAdd; arr[i].units.push(newUnit()); setAns(id, arr); redraw(`.pj-card:nth-of-type(${i + 1}) .un-row:last-of-type input`); }
+      else if (b.dataset.unAdd !== undefined) { const i = +b.dataset.unAdd; arr[i].units.push(newUnit()); setAns(id, arr); redraw(); const rows = root.querySelectorAll('.pj-card')[i].querySelectorAll('.un-row'); rows[rows.length - 1].querySelector('input').focus(); }
       else if (b.dataset.unDel) { const [i, j] = b.dataset.unDel.split(':').map(Number); arr[i].units.splice(j, 1); setAns(id, arr); redraw(); }
     };
   });
