@@ -179,6 +179,13 @@
    "title": "8 · El cliente y el producto"
   },
   {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Sobre la empresa: coloca aquí toda la información que cualquier persona que trabaje contigo debe saber",
+   "placeholder": "Nombre de la empresa:\nNombre del dueño:\nIntegrantes del equipo:\nUbicación de las oficinas:"
+  },
+  {
    "kind": "info",
    "text": "Contenido para los guiones"
   },
