@@ -77,6 +77,28 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .file-item button{padding:3px 10px;font-size:13px}
 .center{text-align:center;padding:30px 0}
 .check{font-size:46px}
+
+/* --- fichas compactas --- */
+.pj-card{padding:14px 16px 16px;margin-bottom:12px;border-radius:18px;border-top-width:4px}
+.pj-head{margin-bottom:0}.pj-title{font-size:16px}
+.pj-card .pj-l{margin:10px 0 3px;font-size:13px}
+.pj-card input[type=text],.pj-card textarea{padding:8px 11px;font-size:14px;border-radius:10px}
+.pj-card textarea{min-height:0;height:52px}
+.pj-grid3{display:grid;grid-template-columns:1.3fr 1.1fr .8fr;gap:10px}
+.pj-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px}.pj-row .pj-l{margin:0}
+.pj-types{display:flex;gap:6px;flex-wrap:wrap}
+.pj-card .pj-types .opt{margin:0;padding:5px 14px;font-size:14px;border-radius:999px}
+.un-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px}
+.pj-link{font-size:13px;padding:0}
+.un-row{grid-template-columns:1.4fr 1fr .8fr 28px;gap:6px;margin-bottom:6px}
+.chips{gap:5px}
+.pj-card .chip{padding:3px 11px;font-size:13px;line-height:1.5;border-radius:999px}
+.pj-card .opt{position:relative}
+.pj-card .opt input{position:absolute;opacity:0;pointer-events:none;width:0;height:0}
+.pj-card .opt:focus-within{outline:2px solid var(--brand);outline-offset:1px}
+.pj-card .opt.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.am-other{margin-top:8px}
+@media(max-width:620px){.pj-grid3{grid-template-columns:1fr}.un-row{grid-template-columns:1fr 1fr}.un-row input:first-child{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -237,23 +259,20 @@ function projectCard(id, p, i) {
   const inp = (f, label, ph) => `<div><label class="pj-l">${label}</label><input type="text" data-p="${i}" data-f="${f}" value="${esc(p[f])}" placeholder="${esc(ph)}"></div>`;
   return `<div class="pj-card">
     <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? ' · primera campaña' : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
-    <div class="pj-grid">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad, zona o dirección')}</div>
-    <label class="pj-l">Tipo de proyecto</label>
-    <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
-    <label class="pj-l">Tipos de unidad, precio y metraje</label>
-    <div class="un-head"><span>Tipo de unidad</span><span>Precio</span><span>Metraje</span><span></span></div>
+    <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad, zona o dirección')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
+    <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
+      <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
+    <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><button type="button" class="pj-link" data-un-add="${i}">+ Añadir tipo de unidad</button></div>
     ${p.units.map((u, j) => `<div class="un-row">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Ej: Apartamento 2 hab" aria-label="Tipo de unidad">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Ej: USD 250,000" aria-label="Precio">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Ej: 95 m²" aria-label="Metraje">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo de unidad · Ej: Apto 2 hab" aria-label="Tipo de unidad">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD 250k)" aria-label="Precio">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (95 m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
-    <button type="button" class="pj-link" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
-    <div class="pj-grid" style="margin-top:14px">${inp('delivery', 'Fecha de entrega', 'Ej: Diciembre 2027 o Entrega inmediata')}<div></div></div>
     <label class="pj-l">Plan de pago</label>
-    <textarea data-p="${i}" data-f="payment" placeholder="Ej: Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
-    <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(marca todas las que tiene)</span></label>
+    <textarea rows="2" data-p="${i}" data-f="payment" placeholder="Ej: Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
+    <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
-    <div style="margin-top:10px">${inp('amenities_other', 'Otras amenidades', 'Menciona las que no estén en la lista')}</div>
+    <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
   </div>`;
 }
 function bindProjects() {
