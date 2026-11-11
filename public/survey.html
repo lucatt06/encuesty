@@ -34,6 +34,14 @@ button:disabled{opacity:.5;cursor:default}
 .nav{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:30px}
 .sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 2px}
 section{scroll-margin-top:70px}
+.qa-wrap{margin:22px 0 0}
+.qa-box{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+.qa-box:focus-within{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 25%,transparent)}
+.qa-box textarea{display:block;border:0;border-radius:0;min-height:84px;background:transparent}
+.qa-box textarea:focus{outline:none}
+.qa-box textarea+textarea{border-top:1px dashed var(--line);background:var(--cream)}
+.qa-box textarea::placeholder{color:#a3a8b8}
+.qa-wrap.field-err .qa-box{border-color:var(--err)}
 .sec-h{margin:44px 0 6px;padding-top:26px;border-top:2px solid var(--cream)}
 section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .field-err>label.q{color:var(--err)}
@@ -133,6 +141,7 @@ function allQs() { return state.steps.flatMap(s => s.items.filter(i => i.kind ==
 function isAnswered(it) {
   if (it.type === 'file') return state.files.some(f => f.question_id === it.id);
   const v = state.answers[it.id];
+  if (it.type === 'qa') return !!(v && (typeof v === 'object' ? (String(v.q || '').trim() || String(v.a || '').trim()) : String(v).trim()));
   if (Array.isArray(v)) return v.length > 0 && !v.every(x => x === 'Otro: ');
   return v !== undefined && String(v).trim() !== '' && v !== 'Otro: ';
 }
@@ -164,6 +173,12 @@ function renderItem(it) {
   const ph = it.placeholder ? ` placeholder="${esc(it.placeholder)}"` : '';
   const types = { text: 'text', email: 'email', phone: 'tel', number: 'number', url: 'url', date: 'date' };
   if (types[it.type]) return wrapS + lab + `<input id="${it.id}" type="${types[it.type]}" data-in="${it.id}" value="${esc(v)}"${ph}>` + wrapE;
+  if (it.type === 'qa') {
+    const q = (v && typeof v === 'object') ? v : { q: typeof v === 'string' ? v : '', a: '' };
+    return `<div data-q="${it.id}" class="qa-wrap"><div class="qa-box">
+      <textarea data-qa="${it.id}" data-part="q" aria-label="${esc(it.label)}" placeholder="${esc(it.label)}">${esc(q.q)}</textarea>
+      <textarea data-qa="${it.id}" data-part="a" aria-label="Tu respuesta" placeholder="Tu respuesta (lo que respondes a esta pregunta)">${esc(q.a)}</textarea></div></div>`;
+  }
   if (it.type === 'textarea') return wrapS + lab + `<textarea id="${it.id}" data-in="${it.id}"${ph}>${esc(v)}</textarea>` + wrapE;
   if (it.type === 'radio' || it.type === 'checkbox') {
     const isC = it.type === 'checkbox', vals = isC ? (v || []) : (v ? [v] : []);
@@ -185,6 +200,10 @@ function renderItem(it) {
 const fileRow = f => `<div class="file-item"><span>📎 ${esc(f.filename)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
 
 function bind() {
+  document.querySelectorAll('[data-qa]').forEach(el => el.oninput = () => {
+    const id = el.dataset.qa, box = el.closest('.qa-box');
+    setAns(id, { q: box.querySelector('[data-part=q]').value, a: box.querySelector('[data-part=a]').value });
+  });
   document.querySelectorAll('[data-in]').forEach(el => el.oninput = () => setAns(el.dataset.in, el.value));
   document.querySelectorAll('[data-opt],[data-other-toggle],[data-other]').forEach(el => el.onchange = el.oninput = () => collectChoice((el.dataset.opt || el.dataset.otherToggle || el.dataset.other)));
   document.querySelectorAll('[data-file]').forEach(el => el.onchange = () => uploadFiles(el));

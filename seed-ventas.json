@@ -189,31 +189,31 @@
   {
    "kind": "question",
    "label": "Pregunta #1",
-   "type": "textarea",
+   "type": "qa",
    "required": false
   },
   {
    "kind": "question",
    "label": "Pregunta #2",
-   "type": "textarea",
+   "type": "qa",
    "required": false
   },
   {
    "kind": "question",
    "label": "Pregunta #3",
-   "type": "textarea",
+   "type": "qa",
    "required": false
   },
   {
    "kind": "question",
    "label": "Pregunta #4",
-   "type": "textarea",
+   "type": "qa",
    "required": false
   },
   {
    "kind": "question",
    "label": "Pregunta #5",
-   "type": "textarea",
+   "type": "qa",
    "required": false
   },
   {

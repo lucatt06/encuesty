@@ -109,7 +109,7 @@ async function viewResponse(id) {
     if (it.kind === 'section') out += `<div class="sec">${esc(it.title)}</div>`;
     else if (it.kind === 'question') {
       const a = r.answers[it.id];
-      let txt = Array.isArray(a) ? a.join('\n') : (a ?? '');
+      let txt = Array.isArray(a) ? a.join('\n') : (a && typeof a === 'object' ? [a.q ? 'Pregunta: ' + a.q : '', a.a ? 'Respuesta: ' + a.a : ''].filter(Boolean).join('\n') : (a ?? ''));
       const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
       out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${txt === '' && !fl ? '<span class="muted">— sin respuesta —</span>' : esc(txt)}${fl}</div></div>`;
     }
@@ -123,7 +123,7 @@ async function delResp(id, sid) { if (confirm('¿Eliminar esta respuesta y sus a
 
 /* ---------- editor de preguntas ---------- */
 let ed = null;
-const TYPES = { text: 'Texto corto', textarea: 'Texto largo', email: 'Correo', phone: 'Teléfono', number: 'Número', url: 'Enlace (URL)', date: 'Fecha', radio: 'Opción única', checkbox: 'Casillas (varias)', file: 'Subir archivo' };
+const TYPES = { text: 'Texto corto', textarea: 'Texto largo', qa: 'Pregunta y respuesta (cuadro dividido)', email: 'Correo', phone: 'Teléfono', number: 'Número', url: 'Enlace (URL)', date: 'Fecha', radio: 'Opción única', checkbox: 'Casillas (varias)', file: 'Subir archivo' };
 async function viewEdit(id) {
   ed = await api('/surveys/' + id); hdr(); drawEditor();
 }
