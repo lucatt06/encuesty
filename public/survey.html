@@ -278,6 +278,7 @@ function projectCard(id, p, i) {
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
       <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
     <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><button type="button" class="pj-link" data-un-add="${i}">+ Añadir tipo de unidad</button></div>
+    <div class="muted" style="font-size:12px;margin:0 0 6px">Una fila por cada tipo de unidad. Ejemplo: una fila para el de 2 habitaciones y otra para el de 3.</div>
     ${p.units.map((u, j) => `<div class="un-row">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo de unidad · Ej: Apto 2 hab" aria-label="Tipo de unidad">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">

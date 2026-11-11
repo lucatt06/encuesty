@@ -42,6 +42,16 @@ th{color:var(--muted);font-weight:600}
 @media(max-width:600px){.item .grid{grid-template-columns:1fr}}
 label.s{font-size:12px;color:var(--muted);display:block;margin:6px 0 2px}
 .login{max-width:380px;margin:90px auto}
+.ans .a:has(.pj-adm){white-space:normal}
+.pj-adm{border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:16px;padding:14px 16px;margin:10px 0;background:#fff;white-space:normal}
+.pj-adm-h{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-weight:800;font-size:17px;margin-bottom:8px}
+.pj-adm-g{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pj-adm-g span,.pj-adm-s{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.pj-adm-s{margin:14px 0 4px}
+.un-t{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.un-t th{background:var(--cream)}
+.am-a{display:flex;flex-wrap:wrap;gap:6px}
+@media(max-width:640px){.pj-adm-g{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -119,12 +129,24 @@ async function viewResponse(id) {
       const a = r.answers[it.id];
       if (it.type === 'project') {
         const prs = Array.isArray(a) ? a : [];
+        const T = x => esc(String(x ?? '').trim() || '—');
         const blocks = prs.map((pr, n) => {
           const fl = r.files.filter(f => f.question_id === it.id + '#' + pr.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
-          const t = fmtProjectsAdmin([pr], { in: '\n', out: '' }, n);
           const lk = (pr.links || []).map(l => `<div><a href="${esc(l)}" target="_blank" rel="noopener">🔗 ${esc(l)}</a></div>`).join('');
-          if (!t && !fl && !lk) return '';
-          return `<div style="margin-bottom:12px">${esc(t || 'Proyecto ' + (n + 1) + ' (sin datos)')}${fl ? '<div class="muted" style="margin-top:4px">Archivos del proyecto:</div>' + fl : ''}${lk ? '<div class="muted" style="margin-top:4px">Enlaces del proyecto:</div>' + lk : ''}</div>`;
+          const units = (pr.units || []).filter(u => u.type || u.price || u.size);
+          const am = [...(pr.amenities || []), pr.amenities_other].filter(x => x && String(x).trim());
+          const has = pr.name || pr.location || pr.type || pr.delivery || pr.payment || units.length || am.length || fl || lk;
+          if (!has) return '';
+          return '<div class="pj-adm">'
+            + `<div class="pj-adm-h">Proyecto ${n + 1}: ${T(pr.name)}</div>`
+            + `<div class="pj-adm-g"><div><span>Ubicación</span>${T(pr.location)}</div><div><span>Tipo de proyecto</span>${T(pr.type)}</div><div><span>Fecha de entrega</span>${T(pr.delivery)}</div></div>`
+            + `<div class="pj-adm-s">Tipos de unidad (${units.length})</div>`
+            + (units.length ? '<table class="un-t"><tr><th style="width:36px">#</th><th>Tipo de unidad</th><th>Precio</th><th>Metraje</th></tr>' + units.map((u, k) => `<tr><td>${k + 1}</td><td>${T(u.type)}</td><td>${T(u.price)}</td><td>${T(u.size)}</td></tr>`).join('') + '</table>' : '<div class="muted">— sin unidades —</div>')
+            + '<div class="pj-adm-s">Plan de pago</div>' + `<div style="white-space:pre-wrap">${T(pr.payment)}</div>`
+            + `<div class="pj-adm-s">Amenidades (${am.length})</div>` + (am.length ? '<div class="am-a">' + am.map(x => `<span class="pill off">${esc(String(x).trim())}</span>`).join('') + '</div>' : '<div class="muted">—</div>')
+            + (fl ? '<div class="pj-adm-s">Archivos del proyecto</div>' + fl : '')
+            + (lk ? '<div class="pj-adm-s">Enlaces del proyecto</div>' + lk : '')
+            + '</div>';
         }).filter(Boolean).join('');
         out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${blocks || '<span class="muted">— sin respuesta —</span>'}</div></div>`; continue; }
       let txt = Array.isArray(a) ? a.join('\n') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join('\n\n') : (a ?? ''));
