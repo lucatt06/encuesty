@@ -18,31 +18,10 @@
   },
   {
    "kind": "question",
-   "label": "Completado por",
-   "type": "text",
-   "required": false,
-   "placeholder": "Nombre completo"
-  },
-  {
-   "kind": "question",
    "label": "Cargo",
    "type": "text",
    "required": false,
    "placeholder": "Ej: Gerente de Ventas"
-  },
-  {
-   "kind": "question",
-   "label": "Correo electrónico",
-   "type": "email",
-   "required": false,
-   "placeholder": "nombre@empresa.com"
-  },
-  {
-   "kind": "question",
-   "label": "Fecha",
-   "type": "date",
-   "required": false,
-   "placeholder": "Selecciona una fecha"
   },
   {
    "kind": "section",
@@ -511,26 +490,8 @@
   },
   {
    "kind": "question",
-   "label": "Nombre",
-   "type": "text",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "Cargo",
-   "type": "text",
-   "required": false
-  },
-  {
-   "kind": "question",
    "label": "WhatsApp",
    "type": "phone",
-   "required": false
-  },
-  {
-   "kind": "question",
-   "label": "Correo",
-   "type": "email",
    "required": false
   },
   {

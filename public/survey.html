@@ -31,10 +31,15 @@ button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font
 button.primary:hover{background:var(--brand-d)}
 .card.center .check{width:76px;height:76px;margin:0 auto 12px;border-radius:50%;background:var(--brand);color:#fff;font-size:40px;line-height:76px}
 button:disabled{opacity:.5;cursor:default}
-.nav{display:flex;justify-content:space-between;gap:12px;margin-top:30px}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:30px}
+.sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 2px}
+section{scroll-margin-top:70px}
+.sec-h{margin:44px 0 6px;padding-top:26px;border-top:2px solid var(--cream)}
+section:first-of-type .sec-h{border-top:0;margin-top:26px}
+.field-err>label.q{color:var(--err)}
 .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:0 0 6px}
 .bar i{display:block;height:100%;background:var(--brand);transition:width .3s}
-.meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:18px}
+.meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:8px}
 .saved{color:var(--ok)}
 .info{background:var(--cream);padding:12px 16px;border-radius:14px}
 .error{color:var(--err);font-size:14px;margin-top:6px}
@@ -75,6 +80,7 @@ function buildSteps(items) {
     else cur.items.push(it);
   }
   flush();
+  while (steps.length > 1 && !steps[steps.length - 1].items.some(i => i.kind === 'question')) steps.pop();
   return steps.length ? steps : [{ title: '', items: [] }];
 }
 
@@ -112,33 +118,42 @@ function renderLogin(title, needName = false, email = '') {
 }
 function begin(r) {
   state.survey = r.survey; state.steps = buildSteps(r.survey.schema.items);
+  state.steps.forEach((st, n) => st.items.forEach(i => { if (i.kind === 'question') secOf[i.id] = n; }));
   state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name;
   state.step = Math.min(r.step || 0, state.steps.length - 1);
   state.completed = r.status === 'completed';
   state.thanks = r.survey.thanks;
   if (state.completed) return renderDone(true);
   render();
+  if (state.step > 0) setTimeout(() => document.getElementById('sec-' + state.step)?.scrollIntoView(), 50);
 }
 
-/* ---------- render del formulario ---------- */
+/* ---------- render del formulario (continuo) ---------- */
+function allQs() { return state.steps.flatMap(s => s.items.filter(i => i.kind === 'question')); }
+function isAnswered(it) {
+  if (it.type === 'file') return state.files.some(f => f.question_id === it.id);
+  const v = state.answers[it.id];
+  if (Array.isArray(v)) return v.length > 0 && !v.every(x => x === 'Otro: ');
+  return v !== undefined && String(v).trim() !== '' && v !== 'Otro: ';
+}
+function updateProgress() {
+  const qs = allQs(), done = qs.filter(isAnswered).length;
+  const pct = qs.length ? Math.round(done / qs.length * 100) : 0;
+  const bar = document.getElementById('pbar'), lab = document.getElementById('plabel');
+  if (bar) bar.style.width = pct + '%';
+  if (lab) lab.textContent = pct + '% completado';
+}
 function render() {
-  const st = state.steps[state.step], total = state.steps.length;
-  const pct = Math.round((state.step / total) * 100);
-  $app.innerHTML = `<div class="card">
-    <div class="bar"><i style="width:${pct}%"></i></div>
-    <div class="meta"><span>Paso ${state.step + 1} de ${total}</span><span id="saved" class="saved">${state.saved}</span></div>
-    ${state.step === 0 ? `<h1>${esc(state.survey.title)}</h1>` : ''}
-    ${st.title ? `<h2>${esc(st.title)}</h2>` : ''}
-    <div id="qs">${st.items.map(renderItem).join('')}</div>
-    <div class="error" id="err"></div>
-    <div class="nav">
-      <button id="prev" ${state.step === 0 ? 'style="visibility:hidden"' : ''}>← Anterior</button>
-      <button id="next" class="primary">${state.step === total - 1 ? 'Enviar respuestas' : 'Siguiente →'}</button>
-    </div></div>`;
-  bind();
-  document.getElementById('prev').onclick = () => go(state.step - 1);
-  document.getElementById('next').onclick = next;
-  window.scrollTo({ top: 0 });
+  $app.innerHTML = `<div class="sticky"><div class="bar"><i id="pbar" style="width:0"></i></div>
+      <div class="meta"><span id="plabel"></span><span id="saved" class="saved">${state.saved}</span></div></div>
+    <div class="card">
+      <h1>${esc(state.survey.title)}</h1>
+      ${state.steps.map((st, n) => `<section id="sec-${n}">${st.title ? `<h2 class="sec-h">${esc(st.title)}</h2>` : ''}${st.items.map(renderItem).join('')}</section>`).join('')}
+      <div class="error" id="err"></div>
+      <div class="nav"><span class="muted" style="font-size:14px">Tus respuestas se guardan solas mientras escribes.</span><button id="next" class="primary">Enviar respuestas</button></div>
+    </div>`;
+  bind(); updateProgress();
+  document.getElementById('next').onclick = submitAll;
 }
 function renderItem(it) {
   if (it.kind === 'info') return `<p class="info">${esc(it.text)}</p>`;
@@ -154,7 +169,7 @@ function renderItem(it) {
     const isC = it.type === 'checkbox', vals = isC ? (v || []) : (v ? [v] : []);
     const known = vals.filter(x => (it.options || []).includes(x));
     const otherVal = vals.find(x => typeof x === 'string' && x.startsWith('Otro: '));
-    const opts = (it.options || []).map((o, i) => `<label class="opt ${known.includes(o) ? 'on' : ''}"><input type="${isC ? 'checkbox' : 'radio'}" name="${it.id}" data-opt="${it.id}" value="${esc(o)}" ${known.includes(o) ? 'checked' : ''}><span>${esc(o)}</span></label>`).join('');
+    const opts = (it.options || []).filter(o => !(it.other && o.trim().toLowerCase() === 'otro')).map((o, i) => `<label class="opt ${known.includes(o) ? 'on' : ''}"><input type="${isC ? 'checkbox' : 'radio'}" name="${it.id}" data-opt="${it.id}" value="${esc(o)}" ${known.includes(o) ? 'checked' : ''}><span>${esc(o)}</span></label>`).join('');
     const other = it.other ? `<label class="opt ${otherVal !== undefined ? 'on' : ''}"><input type="${isC ? 'checkbox' : 'radio'}" name="${it.id}" data-other-toggle="${it.id}" ${otherVal !== undefined ? 'checked' : ''}><span>Otro</span></label>
       <input type="text" class="other-in" data-other="${it.id}" placeholder="Especifica" value="${esc((otherVal || '').slice(6))}" style="${otherVal !== undefined ? '' : 'display:none'}">` : '';
     return wrapS + lab + opts + other + wrapE;
@@ -188,7 +203,13 @@ function collectChoice(qid) {
   setAns(qid, isC ? vals : (vals[0] || ''));
 }
 const findQ = id => state.steps.flatMap(s => s.items).find(i => i.id === id);
-function setAns(id, v) { state.answers[id] = v; pending[id] = v; schedule(); }
+const secOf = {};
+function setAns(id, v) {
+  state.answers[id] = v; pending[id] = v;
+  if (secOf[id] !== undefined) state.step = secOf[id];
+  document.querySelector(`[data-q="${id}"]`)?.classList.remove('field-err');
+  updateProgress(); schedule();
+}
 
 /* ---------- guardado automático ---------- */
 function schedule() { setSaved('Guardando…'); clearTimeout(timer); timer = setTimeout(flushSave, 700); }
@@ -220,48 +241,38 @@ async function uploadFiles(input) {
     try {
       const fd = new FormData(); fd.append('file', file);
       const r = await api('/upload/' + encodeURIComponent(qid), { method: 'POST', body: fd });
-      state.files.push(r.file); row.outerHTML = fileRow(r.file);
+      state.files.push(r.file); row.outerHTML = fileRow(r.file); updateProgress();
     } catch (e) { row.textContent = '⚠ ' + file.name + ': ' + e.message; row.style.color = 'var(--err)'; }
   }
   input.value = ''; bind();
 }
 async function delFile(id) {
   await api('/file/' + id, { method: 'DELETE' });
-  state.files = state.files.filter(f => String(f.id) !== String(id)); render();
+  state.files = state.files.filter(f => String(f.id) !== String(id));
+  document.querySelector(`[data-delfile="${id}"]`)?.closest('.file-item')?.remove(); updateProgress();
 }
 
-/* ---------- navegación y validación ---------- */
-function missingIn(step) {
-  return state.steps[step].items.filter(it => it.kind === 'question' && it.required).filter(it => {
-    if (it.type === 'file') return !state.files.some(f => f.question_id === it.id);
-    const v = state.answers[it.id];
-    if (Array.isArray(v)) return v.length === 0 || v.every(x => x === 'Otro: ');
-    return v === undefined || String(v).trim() === '' || v === 'Otro: ';
-  });
-}
-function go(n) { flushSave(n); state.step = n; render(); }
-async function next() {
-  const miss = missingIn(state.step), err = document.getElementById('err');
+/* ---------- envío y validación ---------- */
+async function submitAll() {
+  const err = document.getElementById('err');
   document.querySelectorAll('.field-err').forEach(e => e.classList.remove('field-err'));
+  const miss = allQs().filter(it => it.required && !isAnswered(it));
   if (miss.length) {
     miss.forEach(m => document.querySelector(`[data-q="${m.id}"]`)?.classList.add('field-err'));
-    err.textContent = miss.length === 1 ? 'Falta responder una pregunta obligatoria (*).' : `Faltan ${miss.length} preguntas obligatorias (*).`;
+    err.textContent = miss.length === 1 ? 'Falta responder una pregunta obligatoria (*). La marqué en rojo.' : `Faltan ${miss.length} preguntas obligatorias (*). Las marqué en rojo.`;
     return document.querySelector(`[data-q="${miss[0].id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-  if (state.step < state.steps.length - 1) return go(state.step + 1);
-  // último paso: revisar todo
-  for (let i = 0; i < state.steps.length; i++) if (missingIn(i).length) { go(i); setTimeout(() => { const e = document.getElementById('err'); if (e) e.textContent = 'Hay preguntas obligatorias sin responder en este paso.'; }, 50); return; }
-  document.getElementById('next').disabled = true;
+  const btn = document.getElementById('next'); btn.disabled = true; err.textContent = '';
   await flushSave(state.step);
   try { await api('/complete', { method: 'POST' }); state.completed = true; renderDone(false); }
-  catch (e) { err.textContent = e.message; document.getElementById('next').disabled = false; }
+  catch (e) { err.textContent = e.message; btn.disabled = false; }
 }
 function renderDone(back) {
   $app.innerHTML = `<div class="card center"><div class="check">✓</div>
     <h2>${back ? 'Ya completaste este cuestionario' : '¡Gracias, ' + esc(state.name) + '!'}</h2>
     <p class="muted">${esc(state.thanks || '')}</p>
     <p><button id="edit">Revisar o editar mis respuestas</button></p></div>`;
-  document.getElementById('edit').onclick = () => { state.completed = false; state.step = 0; render(); };
+  document.getElementById('edit').onclick = () => { state.completed = false; render(); window.scrollTo({ top: 0 }); };
 }
 boot();
 </script>
