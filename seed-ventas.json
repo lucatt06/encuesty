@@ -186,6 +186,37 @@
    "placeholder": "Nombre de la empresa:\nNombre del dueño:\nIntegrantes del equipo:\nUbicación de las oficinas:"
   },
   {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Qué hacen y para quién: explica en 2 o 3 frases a qué se dedica la empresa y quién es su cliente ideal."
+  },
+  {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Qué los diferencia: ¿por qué un cliente debería elegirlos a ustedes y no a la competencia?"
+  },
+  {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Historia y credibilidad: años en el mercado, proyectos entregados, premios, certificaciones, alianzas."
+  },
+  {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Dónde operan: ciudades o países donde venden, y si hay zonas donde no atienden."
+  },
+  {
+   "kind": "question",
+   "type": "textarea",
+   "required": false,
+   "label": "Presencia en línea: sitio web, Instagram, Facebook, LinkedIn, canal de YouTube y cualquier otro enlace oficial (coloca aquí los enlaces de cada una)",
+   "placeholder": "Sitio web:\nInstagram:\nFacebook:\nLinkedIn:\nYouTube:\nOtros:"
+  },
+  {
    "kind": "info",
    "text": "Contenido para los guiones"
   },
