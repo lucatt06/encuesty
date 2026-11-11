@@ -102,6 +102,14 @@ async function viewResponses(id) {
       <td><span class="pill ${r.status === 'completed' ? 'ok' : 'warn'}">${r.status === 'completed' ? 'Completado' : 'En curso'}</span></td>
       <td>${r.step + 1}</td><td>${r.files || ''}</td><td>${fmt(r.updated_at)}</td><td><a class="btn sm" href="#/respuestas/${r.id}">Ver</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">Todavía nadie ha abierto este cuestionario.</td></tr>'}</table></div>`;
 }
+function fmtProjectsAdmin(arr, sep) {
+  if (!Array.isArray(arr)) return '';
+  return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
+    const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
+    const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
+    return [`Proyecto ${i + 1}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`].join(sep.in);
+  }).join(sep.out);
+}
 async function viewResponse(id) {
   const r = await api('/responses/' + id); hdr();
   let out = '';
@@ -109,6 +117,7 @@ async function viewResponse(id) {
     if (it.kind === 'section') out += `<div class="sec">${esc(it.title)}</div>`;
     else if (it.kind === 'question') {
       const a = r.answers[it.id];
+      if (it.type === 'project') { const t = fmtProjectsAdmin(a, { in: '\n', out: '\n\n' }); out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${t ? esc(t) : '<span class="muted">— sin respuesta —</span>'}</div></div>`; continue; }
       let txt = Array.isArray(a) ? a.join('\n') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join('\n\n') : (a ?? ''));
       const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="/api/admin/files/${f.id}">📎 ${esc(f.filename)}</a></div>`).join('');
       out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${txt === '' && !fl ? '<span class="muted">— sin respuesta —</span>' : esc(txt)}${fl}</div></div>`;
@@ -123,7 +132,7 @@ async function delResp(id, sid) { if (confirm('¿Eliminar esta respuesta y sus a
 
 /* ---------- editor de preguntas ---------- */
 let ed = null;
-const TYPES = { text: 'Texto corto', textarea: 'Texto largo', qa: 'Pregunta y respuesta (cuadro dividido)', email: 'Correo', phone: 'Teléfono', number: 'Número', url: 'Enlace (URL)', date: 'Fecha', radio: 'Opción única', checkbox: 'Casillas (varias)', file: 'Subir archivo' };
+const TYPES = { text: 'Texto corto', textarea: 'Texto largo', project: 'Proyectos (fichas con varios campos)', qa: 'Pregunta y respuesta (cuadro dividido)', email: 'Correo', phone: 'Teléfono', number: 'Número', url: 'Enlace (URL)', date: 'Fecha', radio: 'Opción única', checkbox: 'Casillas (varias)', file: 'Subir archivo' };
 async function viewEdit(id) {
   ed = await api('/surveys/' + id); hdr(); drawEditor();
 }

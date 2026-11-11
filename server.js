@@ -40,6 +40,14 @@ const slugify = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const baseUrl = (req) => APP_URL || `${req.protocol}://${req.get('host')}`;
 
+function fmtProjects(arr, sep) {
+  if (!Array.isArray(arr)) return '';
+  return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
+    const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
+    const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
+    return [`Proyecto ${i + 1}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`].join(sep.in);
+  }).join(sep.out);
+}
 const attempts = new Map();
 function rateLimit(key, max, windowMs) {
   const now = Date.now();
@@ -334,7 +342,7 @@ app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
   const head = ['Nombre', 'Correo', 'Estado', 'Inicio', 'Última actualización', 'Completado', ...qs.map((q) => q.label), 'Archivos'];
   const lines = [head.map(cell).join(',')];
   for (const r of rows) {
-    const vals = qs.map((q) => { const a = r.answers[q.id]; return Array.isArray(a) ? a.join('; ') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join(' || ') : a); });
+    const vals = qs.map((q) => { const a = r.answers[q.id]; if (q.type === 'project') return fmtProjects(a, { in: ' | ', out: ' || ' }); return Array.isArray(a) ? a.join('; ') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join(' || ') : a); });
     lines.push([r.name, r.email, r.status === 'completed' ? 'Completado' : 'En curso', r.started_at.toISOString(), r.updated_at.toISOString(), r.completed_at ? r.completed_at.toISOString() : '', ...vals, r.filenames].map(cell).join(','));
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

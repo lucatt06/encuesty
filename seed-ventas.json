@@ -266,6 +266,26 @@
   },
   {
    "kind": "section",
+   "title": "10 · Proyectos en carpeta"
+  },
+  {
+   "kind": "info",
+   "text": "Registra aquí cada proyecto con su información. Empieza por el proyecto de la primera campaña con la que vamos a trabajar. Si tienes más proyectos, usa el botón «Añadir otro proyecto»."
+  },
+  {
+   "kind": "question",
+   "type": "project",
+   "required": false,
+   "label": "Proyectos en carpeta"
+  },
+  {
+   "kind": "question",
+   "type": "file",
+   "required": false,
+   "label": "Brochures, listas de precios, planos o presentaciones de tus proyectos (opcional)"
+  },
+  {
+   "kind": "section",
    "title": "11 · Cierre"
   },
   {

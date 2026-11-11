@@ -34,6 +34,21 @@ button:disabled{opacity:.5;cursor:default}
 .nav{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:30px}
 .sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 2px}
 section{scroll-margin-top:70px}
+.pj-wrap{margin-top:14px}
+.pj-card{border:1px solid var(--line);border-radius:22px;padding:22px;margin:0 0 16px;background:#fff;box-shadow:0 4px 18px rgba(14,23,66,.05);border-top:5px solid var(--brand)}
+.pj-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}
+.pj-title{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-weight:800;font-size:18px;color:var(--navy)}
+.pj-l{display:block;font-weight:600;margin:16px 0 6px}
+.pj-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pj-types{display:flex;gap:8px;flex-wrap:wrap}.pj-types .opt{margin:0;padding:9px 18px}
+.un-head,.un-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 34px;gap:8px;align-items:center}
+.un-head{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
+.un-row{margin-bottom:8px}
+.pj-x{padding:4px 12px;font-size:13px;color:var(--muted)}
+.un-row .pj-x{padding:0;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1}
+.pj-link{border:0;background:none;color:var(--brand);padding:4px 2px;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{margin:0;padding:7px 14px;font-size:14px;border-radius:999px}
+@media(max-width:620px){.pj-grid{grid-template-columns:1fr}.un-head{display:none}.un-row{grid-template-columns:1fr 1fr;padding:10px;border:1px dashed var(--line);border-radius:14px}.un-row input:first-child{grid-column:1/-1}.un-row .pj-x{justify-self:end}.un-row input{padding:10px 9px;font-size:14px}}
 .qa-wrap{margin:22px 0 0}
 .qa-box{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
 .qa-box:focus-within{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 25%,transparent)}
@@ -145,6 +160,7 @@ function allQs() { return state.steps.flatMap(s => s.items.filter(i => i.kind ==
 function isAnswered(it) {
   if (it.type === 'file') return state.files.some(f => f.question_id === it.id);
   const v = state.answers[it.id];
+  if (it.type === 'project') return Array.isArray(v) && v.some(pr => pr && String(pr.name || '').trim());
   if (it.type === 'qa') return !!(v && (typeof v === 'object' ? (String(v.q || '').trim() || String(v.a || '').trim()) : String(v).trim()));
   if (Array.isArray(v)) return v.length > 0 && !v.every(x => x === 'Otro: ');
   return v !== undefined && String(v).trim() !== '' && v !== 'Otro: ';
@@ -177,6 +193,7 @@ function renderItem(it) {
   const ph = it.placeholder ? ` placeholder="${esc(it.placeholder)}"` : '';
   const types = { text: 'text', email: 'email', phone: 'tel', number: 'number', url: 'url', date: 'date' };
   if (types[it.type]) return wrapS + lab + `<input id="${it.id}" type="${types[it.type]}" data-in="${it.id}" value="${esc(v)}"${ph}>` + wrapE;
+  if (it.type === 'project') return `<div data-q="${it.id}" class="pj-wrap" data-pj="${it.id}">${projectsInner(it.id)}</div>`;
   if (it.type === 'qa') {
     const q = (v && typeof v === 'object') ? v : { q: typeof v === 'string' ? v : '', a: '' };
     const last = isLastQa(it), base = qaBase(it);
@@ -202,6 +219,66 @@ function renderItem(it) {
   }
   return '';
 }
+/* ---------- fichas de proyectos ---------- */
+const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
+const newUnit = () => ({ type: '', price: '', size: '' });
+const newProject = () => ({ name: '', location: '', type: '', units: [newUnit()], delivery: '', payment: '', amenities: [], amenities_other: '' });
+function getProjects(id) {
+  let a = state.answers[id];
+  if (!Array.isArray(a) || !a.length) { a = [newProject()]; state.answers[id] = a; }
+  a.forEach(p => { if (!Array.isArray(p.units) || !p.units.length) p.units = [newUnit()]; if (!Array.isArray(p.amenities)) p.amenities = []; });
+  return a;
+}
+function projectsInner(id) {
+  const arr = getProjects(id);
+  return arr.map((p, i) => projectCard(id, p, i)).join('') + `<button type="button" class="qa-add" data-pj-add="${id}">+ Añadir otro proyecto</button>`;
+}
+function projectCard(id, p, i) {
+  const inp = (f, label, ph) => `<div><label class="pj-l">${label}</label><input type="text" data-p="${i}" data-f="${f}" value="${esc(p[f])}" placeholder="${esc(ph)}"></div>`;
+  return `<div class="pj-card">
+    <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? ' · primera campaña' : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
+    <div class="pj-grid">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad, zona o dirección')}</div>
+    <label class="pj-l">Tipo de proyecto</label>
+    <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
+    <label class="pj-l">Tipos de unidad, precio y metraje</label>
+    <div class="un-head"><span>Tipo de unidad</span><span>Precio</span><span>Metraje</span><span></span></div>
+    ${p.units.map((u, j) => `<div class="un-row">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Ej: Apartamento 2 hab" aria-label="Tipo de unidad">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Ej: USD 250,000" aria-label="Precio">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Ej: 95 m²" aria-label="Metraje">
+      ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
+    <button type="button" class="pj-link" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
+    <div class="pj-grid" style="margin-top:14px">${inp('delivery', 'Fecha de entrega', 'Ej: Diciembre 2027 o Entrega inmediata')}<div></div></div>
+    <label class="pj-l">Plan de pago</label>
+    <textarea data-p="${i}" data-f="payment" placeholder="Ej: Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
+    <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(marca todas las que tiene)</span></label>
+    <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
+    <div style="margin-top:10px">${inp('amenities_other', 'Otras amenidades', 'Menciona las que no estén en la lista')}</div>
+  </div>`;
+}
+function bindProjects() {
+  document.querySelectorAll('[data-pj]').forEach(root => {
+    const id = root.dataset.pj;
+    const redraw = (focusSel) => { root.innerHTML = projectsInner(id); bindProjects(); if (focusSel) root.querySelector(focusSel)?.focus(); };
+    root.oninput = root.onchange = e => {
+      const t = e.target; if (t.dataset.p === undefined) return;
+      const arr = getProjects(id), p = arr[+t.dataset.p];
+      if (t.dataset.uf) p.units[+t.dataset.u][t.dataset.uf] = t.value;
+      else if (t.dataset.am !== undefined) { const set = new Set(p.amenities); t.checked ? set.add(t.value) : set.delete(t.value); p.amenities = [...set]; t.closest('.opt').classList.toggle('on', t.checked); }
+      else if (t.dataset.f === 'type') { p.type = t.value; root.querySelectorAll(`[name="${t.name}"]`).forEach(r => r.closest('.opt').classList.toggle('on', r.checked)); }
+      else p[t.dataset.f] = t.value;
+      setAns(id, arr);
+    };
+    root.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const arr = getProjects(id);
+      if (b.dataset.pjAdd) { arr.push(newProject()); setAns(id, arr); redraw(`.pj-card:last-of-type [data-f=name]`); }
+      else if (b.dataset.pjDel) { if (confirm('¿Quitar este proyecto y su información?')) { arr.splice(+b.dataset.pjDel, 1); setAns(id, arr); redraw(); } }
+      else if (b.dataset.unAdd !== undefined) { const i = +b.dataset.unAdd; arr[i].units.push(newUnit()); setAns(id, arr); redraw(`.pj-card:nth-of-type(${i + 1}) .un-row:last-of-type input`); }
+      else if (b.dataset.unDel) { const [i, j] = b.dataset.unDel.split(':').map(Number); arr[i].units.splice(j, 1); setAns(id, arr); redraw(); }
+    };
+  });
+}
 function qaBox(id, ph, v, removable) {
   v = v || {};
   return `<div class="qa-box">${removable ? '<button type="button" class="qa-del" data-qa-del title="Quitar" aria-label="Quitar esta pregunta">×</button>' : ''}
@@ -223,6 +300,7 @@ function collectQA(id) {
 const fileRow = f => `<div class="file-item"><span>📎 ${esc(f.filename)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
 
 function bind() {
+  bindProjects();
   document.querySelectorAll('[data-qa]').forEach(el => el.oninput = () => collectQA(el.dataset.qa));
   document.querySelectorAll('[data-qa-add]').forEach(btn => btn.onclick = () => {
     const id = btn.dataset.qaAdd, wrap = btn.closest('.qa-wrap'), ex = wrap.querySelector('.qa-extras');
