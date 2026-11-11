@@ -113,6 +113,31 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 @media(max-width:620px){.pj-mrow{flex-wrap:wrap}.pj-mlab{flex-basis:100%}}
 .pj-addunit{display:inline-block;margin:2px 0 4px;padding:5px 16px;font-size:13px;color:var(--brand);background:#fff;border:1px dashed var(--brand);border-radius:999px}
 .pj-addunit:hover{background:var(--cream)}
+/* --- compactación vertical --- */
+.pj-card{padding:10px 14px 12px;margin-bottom:10px;border-radius:16px}
+.pj-head{margin-bottom:-2px}.pj-title{font-size:15px}
+.pj-card .pj-l{margin:6px 0 2px;font-size:12.5px}
+.pj-card input[type=text],.pj-card textarea{padding:6px 10px;font-size:13.5px;border-radius:9px}
+.pj-card textarea[data-f=payment]{height:34px;min-height:34px;overflow:hidden;resize:none;line-height:1.35}
+.pj-grid3{gap:8px}
+.pj-row{gap:8px;margin-top:4px}
+.pj-card .pj-types .opt{padding:3px 12px;font-size:13px}
+.un-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:4px}.pj-hint{font-size:11.5px;color:var(--muted)}
+.un-row{margin-bottom:4px;gap:6px}
+.pj-addunit{margin:0 0 2px;padding:3px 12px;font-size:12.5px}
+.chips{gap:4px;align-items:center}
+.pj-card .chip{padding:1px 9px;font-size:12.5px;line-height:1.5}
+.pj-card .am-other{flex:1 1 210px;min-width:0;width:auto;margin:0;padding:4px 10px;font-size:12.5px;border-radius:999px}
+.pj-media{margin-top:8px;padding-top:6px}
+.pj-mt{font-size:12.5px;margin-bottom:2px}
+.pj-mrow{margin:3px 0;gap:8px;flex-wrap:wrap}
+.pj-mlab{flex:0 0 auto;font-size:12.5px}
+.pj-up{padding:3px 12px;font-size:13px}
+.pj-link-in{flex:1 1 150px}
+.pj-addlink{padding:4px 12px;font-size:13px}
+.pj-card .file-list,.pj-card .link-list{margin:0}.pj-card .file-item{padding:3px 8px;margin:2px 0;font-size:12.5px}
+@media(max-width:620px){.pj-mlab{flex-basis:auto}.pj-mlab.pj-or{margin-left:0}}
+.pj-card textarea[data-f=payment]::placeholder{font-size:12px}
 </style>
 </head>
 <body>
@@ -276,27 +301,24 @@ function projectCard(id, p, i) {
   const inp = (f, label, ph) => `<div><label class="pj-l">${label}</label><input type="text" data-p="${i}" data-f="${f}" value="${esc(p[f])}" placeholder="${esc(ph)}"></div>`;
   return `<div class="pj-card">
     <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? ' · primera campaña' : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
-    <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad, zona o dirección')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
+    <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad o zona')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
       <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
-    <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label></div>
-    <div class="muted" style="font-size:12px;margin:0 0 6px">Una fila por cada tipo de unidad. Ejemplo: una fila para el de 2 habitaciones y otra para el de 3.</div>
+    <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><span class="pj-hint">Una fila por cada tipo (ej: una de 2 hab y otra de 3)</span></div>
     ${p.units.map((u, j) => `<div class="un-row">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo de unidad · Ej: Apto 2 hab" aria-label="Tipo de unidad">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo · Ej: Apto 2 hab" aria-label="Tipo de unidad">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (95 m²)" aria-label="Metraje">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
     <button type="button" class="pj-addunit" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
     <label class="pj-l">Plan de pago</label>
-    <textarea rows="2" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Durante construcción 30% · Contra entrega 60%">${esc(p.payment)}</textarea>
+    <textarea rows="1" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Construcción 30% · Entrega 60%">${esc(p.payment)}</textarea>
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
-    <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div>
-    <input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades">
+    <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}<input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades"></div>
     <div class="pj-media">
       <div class="pj-mt">Brochures, listado de precios, planos o fotos</div>
-      <div class="pj-mrow"><span class="pj-mlab">Subir</span><label class="pj-up">📎 Elegir archivos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label></div>
+      <div class="pj-mrow"><span class="pj-mlab">Subir</span><label class="pj-up">📎 Elegir archivos<input type="file" multiple hidden data-file="${esc(id + '#' + p.id)}"></label><span class="pj-mlab pj-or">Pegar enlace</span><input type="text" class="pj-link-in" data-linkin="${i}" placeholder="https://drive.google.com/… (Drive, Dropbox, YouTube…)" aria-label="Pegar enlace"><button type="button" class="pj-addlink" data-link-add="${i}">Añadir</button></div>
       <div class="file-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(fileRow).join('')}</div>
-      <div class="pj-mrow"><span class="pj-mlab">Pegar enlace</span><input type="text" class="pj-link-in" data-linkin="${i}" placeholder="https://drive.google.com/… (Drive, Dropbox, YouTube, etc.)" aria-label="Pegar enlace"><button type="button" class="pj-addlink" data-link-add="${i}">Añadir</button></div>
       <div class="link-list">${p.links.map((l, k) => `<div class="file-item"><span>🔗 <a href="${esc(l)}" target="_blank" rel="noopener">${esc(l)}</a></span><button type="button" data-link-del="${i}:${k}">Quitar</button></div>`).join('')}</div>
     </div>
   </div>`;
@@ -305,8 +327,11 @@ function bindProjects() {
   document.querySelectorAll('[data-pj]').forEach(root => {
     const id = root.dataset.pj;
     const redraw = (focusSel) => { root.innerHTML = projectsInner(id); bind(); if (focusSel) root.querySelector(focusSel)?.focus(); };
+    const grow = el => { if (!el.value) { el.style.height = '34px'; return; } el.style.height = 'auto'; el.style.height = Math.max(34, el.scrollHeight + 2) + 'px'; };
+    root.querySelectorAll('textarea[data-f=payment]').forEach(grow);
     root.oninput = root.onchange = e => {
       const t = e.target; if (t.dataset.p === undefined) return;
+      if (t.dataset.f === 'payment') grow(t);
       const arr = getProjects(id), p = arr[+t.dataset.p];
       if (t.dataset.uf) p.units[+t.dataset.u][t.dataset.uf] = t.value;
       else if (t.dataset.am !== undefined) { const set = new Set(p.amenities); t.checked ? set.add(t.value) : set.delete(t.value); p.amenities = [...set]; t.closest('.opt').classList.toggle('on', t.checked); }
