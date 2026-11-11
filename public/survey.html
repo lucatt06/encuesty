@@ -280,7 +280,7 @@ function projectCard(id, p, i) {
     <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><button type="button" class="pj-link" data-un-add="${i}">+ Añadir tipo de unidad</button></div>
     ${p.units.map((u, j) => `<div class="un-row">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo de unidad · Ej: Apto 2 hab" aria-label="Tipo de unidad">
-      <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD 250k)" aria-label="Precio">
+      <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (95 m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
     <label class="pj-l">Plan de pago</label>
