@@ -293,16 +293,6 @@
    "required": false
   },
   {
-   "kind": "info",
-   "text": "11.2 ¿Quién será nuestro punto de contacto principal durante la implementación?"
-  },
-  {
-   "kind": "question",
-   "label": "WhatsApp",
-   "type": "phone",
-   "required": false
-  },
-  {
    "kind": "page"
   },
   {
