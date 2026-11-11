@@ -4,49 +4,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cuestionario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f5f6fa;--card:#fff;--ink:#1c2033;--muted:#6b7190;--line:#dfe2ee;--brand:#4f46e5;--brand-d:#4338ca;--ok:#16a34a;--err:#dc2626}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1220;--card:#181c30;--ink:#eceefc;--muted:#9aa0c4;--line:#2b3050;--brand:#818cf8;--brand-d:#6366f1}}
+:root{--bg:#f8fafb;--card:#fff;--ink:#0e1742;--muted:#6a7287;--line:#e4e2da;--cream:#f4f1e9;--brand:#e93b74;--brand-d:#d12a62;--navy:#0e1742;--ok:#16a34a;--warn:#d97706;--err:#dc2626}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+h1,h2,.brand{font-family:'Plus Jakarta Sans',Inter,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif}
 .wrap{max-width:720px;margin:0 auto;padding:24px 16px 80px}
-.brand{font-weight:700;color:var(--brand);letter-spacing:.3px;margin-bottom:12px;font-size:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
-h1{font-size:24px;margin:0 0 8px}
-h2{font-size:20px;margin:0 0 16px}
+.brand{font-weight:800;color:var(--navy);font-size:22px;letter-spacing:-.5px;margin:6px 4px 16px}.brand b{color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:28px;padding:34px;box-shadow:0 10px 40px rgba(14,23,66,.07)}@media(max-width:520px){.card{padding:24px 20px;border-radius:22px}}
+h1{font-size:30px;line-height:1.15;margin:0 0 10px;font-weight:800;letter-spacing:-.8px}
+h2{font-size:22px;margin:0 0 16px;font-weight:700;letter-spacing:-.4px}
 p.muted,.muted{color:var(--muted)}
 label.q{display:block;font-weight:600;margin:22px 0 6px}
 .req{color:var(--err)}
-input[type=text],input[type=email],input[type=tel],input[type=url],input[type=number],input[type=date],textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit}
+input[type=text],input[type=email],input[type=tel],input[type=url],input[type=number],input[type=date],textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font:inherit}
 textarea{min-height:96px;resize:vertical}
 input:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:transparent}
-.opt{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border:1px solid var(--line);border-radius:14px;margin:6px 0;cursor:pointer}
 .opt:hover{border-color:var(--brand)}
 .opt input{margin-top:4px;accent-color:var(--brand)}
-.opt.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,transparent)}
+.opt.on{border-color:var(--brand);background:var(--cream)}
 .other-in{margin:4px 0 0 30px;width:calc(100% - 30px)}
-button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:11px 20px}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--navy);padding:12px 26px}
 button.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
 button.primary:hover{background:var(--brand-d)}
+.card.center .check{width:76px;height:76px;margin:0 auto 12px;border-radius:50%;background:var(--brand);color:#fff;font-size:40px;line-height:76px}
 button:disabled{opacity:.5;cursor:default}
 .nav{display:flex;justify-content:space-between;gap:12px;margin-top:30px}
-.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin:0 0 6px}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:0 0 6px}
 .bar i{display:block;height:100%;background:var(--brand);transition:width .3s}
 .meta{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:18px}
 .saved{color:var(--ok)}
+.info{background:var(--cream);padding:12px 16px;border-radius:14px}
 .error{color:var(--err);font-size:14px;margin-top:6px}
 .field-err input,.field-err textarea{border-color:var(--err)}
-.info{color:var(--muted);margin:10px 0}
+.info{color:var(--navy);margin:12px 0}
 .file-list{margin:8px 0}
 .file-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;margin:4px 0;font-size:14px}
 .file-item button{padding:3px 10px;font-size:13px}
 .center{text-align:center;padding:30px 0}
-.check{font-size:46px;color:var(--ok)}
+.check{font-size:46px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">Encuesty</div>
+  <div class="brand">encuesty<b>.</b></div>
   <div id="app"><div class="card"><p class="muted">Cargando…</p></div></div>
 </div>
 <script>
