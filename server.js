@@ -48,20 +48,29 @@ function rateLimit(key, max, windowMs) {
   return arr.length > max;
 }
 
-/* ---------- correo (Resend) ---------- */
-async function sendMail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.FROM_EMAIL;
-  if (!key || !from) { console.log('[mail omitido: falta RESEND_API_KEY/FROM_EMAIL]', to, subject); return false; }
+/* ---------- correo (GoHighLevel) ---------- */
+const GHL = process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com';
+const ghlHeaders = () => ({ Authorization: `Bearer ${process.env.GHL_API_TOKEN}`, Version: '2021-07-28', 'Content-Type': 'application/json', Accept: 'application/json' });
+// Busca el contacto por correo en la subcuenta; si no existe lo crea (GHL solo envía correos a contactos).
+async function ghlContactId(email, name) {
+  const r = await fetch(`${GHL}/contacts/upsert`, {
+    method: 'POST', headers: ghlHeaders(),
+    body: JSON.stringify({ locationId: process.env.GHL_LOCATION_ID, email, ...(name ? { name } : {}) }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`contacto ${r.status}: ${JSON.stringify(j).slice(0, 300)}`);
+  return (j.contact && j.contact.id) || j.id;
+}
+async function sendMail({ to, name, subject, html }) {
+  if (!process.env.GHL_API_TOKEN || !process.env.GHL_LOCATION_ID) { console.log('[mail omitido: falta GHL_API_TOKEN/GHL_LOCATION_ID]', to, subject); return false; }
   try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-    });
-    if (!r.ok) console.error('[mail error]', r.status, await r.text());
-    return r.ok;
-  } catch (e) { console.error('[mail error]', e.message); return false; }
+    const contactId = await ghlContactId(to, name);
+    const body = { type: 'Email', contactId, subject, html };
+    if (process.env.GHL_EMAIL_FROM) body.emailFrom = process.env.GHL_EMAIL_FROM;
+    const r = await fetch(`${GHL}/conversations/messages`, { method: 'POST', headers: ghlHeaders(), body: JSON.stringify(body) });
+    if (!r.ok) { console.error('[GHL mensaje error]', r.status, (await r.text()).slice(0, 300)); return false; }
+    return true;
+  } catch (e) { console.error('[GHL error]', e.message); return false; }
 }
 
 /* ---------- base de datos ---------- */
@@ -219,7 +228,7 @@ app.post('/api/s/:slug/complete', clientAuth, async (req, res) => {
   if (first) {
     const s = req.survey, c = req.resp;
     const link = `${baseUrl(req)}/admin#/respuestas/${c.id}`;
-    sendMail({ to: c.email, subject: `Recibimos tus respuestas — ${s.title}`,
+    sendMail({ to: c.email, name: c.name, subject: `Recibimos tus respuestas — ${s.title}`,
       html: `<p>Hola ${esc(c.name)},</p><p>${esc(s.thanks_message)}</p><p>Si necesitas cambiar algo, vuelve a abrir el enlace del cuestionario con tu correo y podrás editar tus respuestas.</p>` });
     if (ADMIN_EMAIL) sendMail({ to: ADMIN_EMAIL, subject: `Nuevo cuestionario completado: ${c.name} — ${s.title}`,
       html: `<p><b>${esc(c.name)}</b> (${esc(c.email)}) completó <b>${esc(s.title)}</b>.</p><p><a href="${link}">Ver respuestas</a></p>` });
