@@ -176,7 +176,7 @@
   },
   {
    "kind": "section",
-   "title": "8 · El cliente y el producto"
+   "title": "8 · Sobre tu empresa"
   },
   {
    "kind": "question",
@@ -217,12 +217,16 @@
    "placeholder": "Sitio web:\nInstagram:\nFacebook:\nLinkedIn:\nYouTube:\nOtros:"
   },
   {
+   "kind": "section",
+   "title": "9 · Sobre tu esencia"
+  },
+  {
    "kind": "info",
    "text": "Contenido para los guiones"
   },
   {
    "kind": "info",
-   "text": "8.1 ¿Cuáles son las 5 preguntas que más hacen los clientes potenciales? y las respuestas que tu le das a esas preguntas."
+   "text": "9.1 ¿Cuáles son las 5 preguntas que más hacen los clientes potenciales? y las respuestas que tu le das a esas preguntas."
   },
   {
    "kind": "question",
@@ -256,13 +260,13 @@
   },
   {
    "kind": "question",
-   "label": "8.4 ¿Qué consideran ustedes un lead “calificado”?",
+   "label": "9.2 ¿Qué consideran ustedes un lead “calificado”?",
    "type": "textarea",
    "required": false
   },
   {
    "kind": "section",
-   "title": "10 · Cierre"
+   "title": "11 · Cierre"
   },
   {
    "kind": "info",
@@ -270,13 +274,13 @@
   },
   {
    "kind": "question",
-   "label": "10.1 ¿Hay algo de su operación de ventas que consideren importante y que este cuestionario no haya preguntado?",
+   "label": "11.1 ¿Hay algo de su operación de ventas que consideren importante y que este cuestionario no haya preguntado?",
    "type": "textarea",
    "required": false
   },
   {
    "kind": "info",
-   "text": "10.2 ¿Quién será nuestro punto de contacto principal durante la implementación?"
+   "text": "11.2 ¿Quién será nuestro punto de contacto principal durante la implementación?"
   },
   {
    "kind": "question",
