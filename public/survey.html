@@ -138,6 +138,8 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-card .file-list,.pj-card .link-list{margin:0}.pj-card .file-item{padding:3px 8px;margin:2px 0;font-size:12.5px}
 @media(max-width:620px){.pj-mlab{flex-basis:auto}.pj-mlab.pj-or{margin-left:0}}
 .pj-card textarea[data-f=payment]::placeholder{font-size:12px}
+.pj-wrap.field-err input,.pj-wrap.field-err textarea{border-color:var(--line)}
+.pj-wrap.field-err .pj-card:first-of-type [data-f=name]{border-color:var(--err)}
 </style>
 </head>
 <body>
@@ -300,7 +302,7 @@ function projectsInner(id) {
 function projectCard(id, p, i) {
   const inp = (f, label, ph) => `<div><label class="pj-l">${label}</label><input type="text" data-p="${i}" data-f="${f}" value="${esc(p[f])}" placeholder="${esc(ph)}"></div>`;
   return `<div class="pj-card">
-    <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? ' · primera campaña' : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
+    <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? (findQ(id)?.first_tag ?? ' · primera campaña') : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
     <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad o zona')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
       <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
@@ -485,7 +487,7 @@ async function submitAll() {
   const miss = allQs().filter(it => it.required && !isAnswered(it));
   if (miss.length) {
     miss.forEach(m => document.querySelector(`[data-q="${m.id}"]`)?.classList.add('field-err'));
-    err.textContent = miss.length === 1 ? 'Falta responder una pregunta obligatoria (*). La marqué en rojo.' : `Faltan ${miss.length} preguntas obligatorias (*). Las marqué en rojo.`;
+    err.textContent = miss.length === 1 && miss[0].type === 'project' ? 'Escribe al menos el nombre del primer proyecto (lo marqué en rojo).' : miss.length === 1 ? 'Falta responder una pregunta obligatoria (*). La marqué en rojo.' : `Faltan ${miss.length} preguntas obligatorias (*). Las marqué en rojo.`;
     return document.querySelector(`[data-q="${miss[0].id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   const btn = document.getElementById('next'); btn.disabled = true; err.textContent = '';
