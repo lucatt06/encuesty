@@ -442,6 +442,7 @@ app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
 const pub = path.join(__dirname, 'public');
 app.use('/static', express.static(pub, { maxAge: '5m' }));
 app.get('/health', (req, res) => res.send('ok'));
+app.get('/favicon.ico', (req, res) => { res.set('Cache-Control', 'public, max-age=86400'); res.sendFile(path.join(pub, 'favicon.ico')); });
 app.get('/admin', (req, res) => res.sendFile(path.join(pub, 'admin.html')));
 app.get('/s/:slug', (req, res) => res.sendFile(path.join(pub, 'survey.html')));
 app.get('/r/:token', (req, res) => { noIndex(res); res.sendFile(path.join(pub, 'share.html')); });
