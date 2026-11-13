@@ -196,7 +196,7 @@ async function viewClient(id) {
   const d = await api('/clients/' + id); hdr();
   const g = d.ghl;
   $.innerHTML = `<p><a href="#/clientes" style="color:var(--brand)">← Clientes</a></p>
-    <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${esc(d.client.email)}</p></div><div>${ghlPill({ connected: g.connected, kb_error: g.error })}</div></div>
+    <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${esc(d.client.email)}</p></div><div class="row">${ghlPill({ connected: g.connected, kb_error: g.error })}<button class="danger sm" onclick="delClient(${id},'${esc(d.client.name).replace(/'/g, '')}')">Eliminar cliente</button></div></div>
     <div class="card"><h2>Conexión con la subcuenta de GHL</h2>
       <p class="muted" style="margin:0 0 10px">Pega el token de API (Private Integration) y el Location ID de la subcuenta de este cliente. Necesita permisos de <b>knowledge-bases</b> (lectura y escritura). El token se guarda cifrado y no se vuelve a mostrar.</p>
       <div class="row"><div style="flex:2;min-width:240px"><label class="s">Token de API</label><input type="password" id="gtok" autocomplete="off" placeholder="${g.hasToken ? '•••••••• guardado (déjalo vacío para conservarlo)' : 'pega aquí el token'}"></div>
@@ -232,6 +232,9 @@ async function syncNow(id, btn) {
   try { const r = await api('/clients/' + id + '/sync', { method: 'POST' }); msg.innerHTML = r.ok ? '<div style="color:var(--ok);font-weight:600">✓ Sincronizado.</div>' : `<div class="err">${esc(r.skipped || (r.errors || []).join(' | ') || 'No se pudo sincronizar')}</div>`; }
   catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   btn.disabled = false;
+}
+async function delClient(id, name) {
+  if (prompt('Esto elimina a ' + name + ' con TODAS sus respuestas, proyectos, preguntas y archivos. No se puede deshacer.\n\nEscribe ELIMINAR para confirmar:') === 'ELIMINAR') { await api('/clients/' + id, { method: 'DELETE' }); location.hash = '#/clientes'; }
 }
 async function unlinkGhl(id) { if (confirm('¿Desconectar la subcuenta de GHL de este cliente? Sus proyectos y preguntas se conservan en Encuesty.')) { await api('/clients/' + id + '/ghl', { method: 'DELETE' }); viewClient(id); } }
 
