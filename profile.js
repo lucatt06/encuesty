@@ -219,9 +219,18 @@ module.exports = function (ctx) {
     if (!r.ok) throw new Error(`GHL ${method} ${p} → ${r.status}: ${JSON.stringify(j).slice(0, 220)}`);
     return j;
   }
+  // GHL puede devolver la lista directo en `data`, o dentro de un objeto (data.knowledgeBases, data.data...)
+  function kbArray(j) {
+    const d = j && j.data;
+    for (const c of [d, d && d.knowledgeBases, d && d.data, d && d.items, j && j.knowledgeBases, j && j.items]) if (Array.isArray(c)) return c;
+    if (d && typeof d === 'object') for (const v of Object.values(d)) if (Array.isArray(v)) return v;
+    return null;
+  }
   async function listKbs(c) {
     const j = await ghlReq(c, 'GET', '/knowledge-bases/', { query: { locationId: c.loc, limit: 50 } });
-    return (j.data || j.knowledgeBases || []).map((k) => ({ id: k.id || k._id, name: k.name || '(sin nombre)' })).filter((k) => k.id);
+    const arr = kbArray(j);
+    if (!arr) throw new Error('GHL respondió, pero en un formato inesperado al listar las bases de conocimiento (campos: ' + Object.keys(j || {}).join(', ') + (j && j.data && typeof j.data === 'object' ? ' / data: ' + Object.keys(j.data).join(', ') : '') + ')');
+    return arr.map((k) => ({ id: k.id || k._id || k.knowledgeBaseId, name: k.name || k.title || '(sin nombre)' })).filter((k) => k.id);
   }
   const connOf = (row) => (row.ghl_token_enc && row.ghl_location_id && row.ghl_kb_id ? { tok: dec(row.ghl_token_enc), loc: row.ghl_location_id, kb: row.ghl_kb_id } : null);
 
@@ -232,7 +241,8 @@ module.exports = function (ctx) {
     let ids = [];
     try {
       const j = await ghlReq(c, 'GET', '/knowledge-bases/crawler', { query: { knowledgeBaseId: c.kb, locationId: c.loc, query: token, page: 1, pageLength: 50 } });
-      ids = (j.urls || []).filter((u) => String(u.url || '').includes(token)).map((u) => u.id || u._id).filter(Boolean);
+      const urls = Array.isArray(j.urls) ? j.urls : Array.isArray(j.data && j.data.urls) ? j.data.urls : Array.isArray(j.data) ? j.data : [];
+      ids = urls.filter((u) => String(u.url || '').includes(token)).map((u) => u.id || u._id).filter(Boolean);
     } catch { /* si no se puede listar, se intenta igual el escaneo */ }
     if (ids.length) await ghlReq(c, 'DELETE', '/knowledge-bases/crawler', { body: { knowledgeBaseId: c.kb, locationId: c.loc, urlIds: ids, deleteAll: false } });
     await ghlReq(c, 'POST', '/knowledge-bases/crawler', { body: { url, option: 'Exact', knowledgeBaseId: c.kb, locationId: c.loc, autoTrain: true } });
@@ -250,7 +260,7 @@ module.exports = function (ctx) {
           await pool.query("UPDATE client_faqs SET sync_state='synced', sync_error=NULL WHERE id=$1", [f.id]);
         } else {
           const j = await ghlReq(c, 'POST', '/knowledge-bases/faqs', { body: { question: f.question, answer: f.answer, knowledgeBaseId: c.kb, locationId: c.loc } });
-          const id = (j.faq && (j.faq.id || j.faq._id)) || j.id;
+          const id = (j.faq && (j.faq.id || j.faq._id)) || (j.data && (j.data.id || j.data._id || (j.data.faq && (j.data.faq.id || j.data.faq._id)))) || j.id;
           if (!id) throw new Error('GHL no devolvió el id de la pregunta');
           await pool.query("UPDATE client_faqs SET ghl_faq_id=$1, sync_state='synced', sync_error=NULL WHERE id=$2", [String(id), f.id]);
         }
