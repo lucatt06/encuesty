@@ -77,7 +77,7 @@ function renderLogin(msg = '') {
   };
 }
 async function logout() { await fetch('/api/admin/logout', { method: 'POST' }); renderLogin(); }
-function hdr() { document.getElementById('hdr').innerHTML = '<a class="btn" href="#/">Cuestionarios</a> <button onclick="logout()">Salir</button>'; }
+function hdr() { document.getElementById('hdr').innerHTML = '<a class="btn" href="#/">Cuestionarios</a> <a class="btn" href="#/clientes">Clientes</a> <button onclick="logout()">Salir</button>'; }
 
 /* ---------- lista de cuestionarios ---------- */
 async function viewList() {
@@ -180,6 +180,61 @@ async function delSurvey() {
   if (prompt('Esto elimina el cuestionario y TODAS sus respuestas. Escribe ELIMINAR para confirmar:') === 'ELIMINAR') { await api('/surveys/' + ed.id, { method: 'DELETE' }); location.hash = '#/'; }
 }
 
+/* ---------- clientes: perfil y conexión con GHL ---------- */
+function ghlPill(c) {
+  if (!c.connected) return '<span class="pill off">Sin conectar</span>';
+  if (c.kb_error) return '<span class="pill warn">Con error</span>';
+  return '<span class="pill ok">Conectado</span>';
+}
+async function viewClients() {
+  const { clients } = await api('/clients'); hdr();
+  $.innerHTML = `<h1>Clientes</h1><p class="muted">Cada cliente tiene su perfil, sus proyectos y sus preguntas y respuestas. Aquí conectas la subcuenta de GHL de cada uno para alimentar a su agente de IA.</p>
+    <div class="card" style="overflow:auto"><table><tr><th>Cliente</th><th>Correo</th><th>Cuestionarios</th><th>Proyectos</th><th>Preguntas</th><th>GHL</th><th>Última sincronización</th><th></th></tr>
+    ${clients.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.email)}</td><td>${c.surveys}</td><td>${c.projects}</td><td>${c.faqs}</td><td>${ghlPill(c)}</td><td>${c.connected ? fmt(c.kb_synced_at) : '—'}</td><td><a class="btn sm" href="#/cliente/${c.id}">Abrir</a></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Todavía no hay clientes.</td></tr>'}</table></div>`;
+}
+async function viewClient(id) {
+  const d = await api('/clients/' + id); hdr();
+  const g = d.ghl;
+  $.innerHTML = `<p><a href="#/clientes" style="color:var(--brand)">← Clientes</a></p>
+    <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${esc(d.client.email)}</p></div><div>${ghlPill({ connected: g.connected, kb_error: g.error })}</div></div>
+    <div class="card"><h2>Conexión con la subcuenta de GHL</h2>
+      <p class="muted" style="margin:0 0 10px">Pega el token de API (Private Integration) y el Location ID de la subcuenta de este cliente. Necesita permisos de <b>knowledge-bases</b> (lectura y escritura). El token se guarda cifrado y no se vuelve a mostrar.</p>
+      <div class="row"><div style="flex:2;min-width:240px"><label class="s">Token de API</label><input type="password" id="gtok" autocomplete="off" placeholder="${g.hasToken ? '•••••••• guardado (déjalo vacío para conservarlo)' : 'pega aquí el token'}"></div>
+        <div style="flex:1;min-width:200px"><label class="s">Location ID</label><input type="text" id="gloc" value="${esc(g.locationId)}" placeholder="ID de la subcuenta"></div></div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="gsave" onclick="saveGhl(${id})">Guardar y probar conexión</button>
+        ${g.hasToken ? `<button onclick="syncNow(${id},this)">Sincronizar ahora</button><button class="danger" onclick="unlinkGhl(${id})">Desconectar</button>` : ''}</div>
+      <div id="gmsg" style="margin-top:10px">${g.connected ? `<span class="muted">Base de conocimientos seleccionada: <code>${esc(g.kbId)}</code> · ${g.dirty ? 'cambios pendientes de enviar · ' : ''}última sincronización: ${esc(fmt(g.syncedAt))}</span>` : ''}${g.error ? `<div class="err" style="margin-top:6px">${esc(g.error)}</div>` : ''}</div>
+      <div id="kbsel"></div></div>
+    <div class="card"><h2>Página de proyectos para el Web crawler</h2>
+      <p class="muted" style="margin:0 0 8px">Esta es la página de texto con todos los proyectos del cliente. Se registra sola en el Web crawler de su base de conocimientos y se vuelve a leer cuando el cliente cambia algo.</p>
+      <div class="row"><input type="text" readonly value="${esc(d.kbUrl)}" onclick="this.select()" style="flex:1;min-width:260px"><button onclick="copy('${esc(d.kbUrl)}',this)">Copiar</button><a class="btn" href="${esc(d.kbUrl)}" target="_blank" rel="noopener">Abrir</a></div></div>
+    <div class="card"><h2>Proyectos (${d.projects.length})</h2>${d.projects.length ? d.projects.map(p => `<div style="margin:10px 0 14px"><div class="muted" style="font-size:12px">Origen: ${esc(p.origin)}</div><div style="white-space:pre-wrap">${esc(p.text)}</div></div>`).join('') : '<p class="muted">Sin proyectos todavía.</p>'}</div>
+    <div class="card"><h2>Preguntas y respuestas (${d.faqs.length})</h2>${d.faqs.length ? d.faqs.map(f => `<div class="ans"><div class="l">${esc(f.question)} <span class="pill ${f.state === 'synced' ? 'ok' : f.state === 'local' ? 'off' : 'warn'}">${{ synced: 'En GHL', pending: 'Pendiente', error: 'Error', local: 'Solo en Encuesty' }[f.state] || esc(f.state)}</span></div><div class="a">${esc(f.answer)}</div>${f.error ? `<div class="err">${esc(f.error)}</div>` : ''}</div>`).join('') : '<p class="muted">Sin preguntas todavía.</p>'}</div>`;
+}
+async function saveGhl(id, kbId) {
+  const btn = document.getElementById('gsave'), msg = document.getElementById('gmsg'), sel = document.getElementById('kbsel');
+  btn.disabled = true; msg.innerHTML = '<span class="muted">Probando la conexión…</span>';
+  try {
+    const body = { locationId: document.getElementById('gloc').value, token: document.getElementById('gtok').value };
+    if (kbId) body.kbId = kbId;
+    const r = await api('/clients/' + id + '/ghl', { method: 'PUT', body: JSON.stringify(body) });
+    if (!r.ok) { msg.innerHTML = `<div class="err">${esc(r.error)}</div>`; sel.innerHTML = ''; }
+    else {
+      msg.innerHTML = `<div style="color:var(--ok);font-weight:600">✓ Conexión correcta. Se está sincronizando con la base de conocimientos «${esc(r.kbName)}».</div>`;
+      sel.innerHTML = r.knowledgeBases.length > 1 ? `<div class="row" style="margin-top:10px"><label class="s" style="margin:0">Base de conocimientos</label><select id="kbpick" style="max-width:320px">${r.knowledgeBases.map(k => `<option value="${esc(k.id)}" ${k.id === r.kbId ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select><button onclick="saveGhl(${id}, document.getElementById('kbpick').value)">Usar esta</button></div>` : '';
+      document.getElementById('gtok').value = '';
+    }
+  } catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+async function syncNow(id, btn) {
+  btn.disabled = true; const msg = document.getElementById('gmsg'); msg.innerHTML = '<span class="muted">Sincronizando…</span>';
+  try { const r = await api('/clients/' + id + '/sync', { method: 'POST' }); msg.innerHTML = r.ok ? '<div style="color:var(--ok);font-weight:600">✓ Sincronizado.</div>' : `<div class="err">${esc(r.skipped || (r.errors || []).join(' | ') || 'No se pudo sincronizar')}</div>`; }
+  catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+async function unlinkGhl(id) { if (confirm('¿Desconectar la subcuenta de GHL de este cliente? Sus proyectos y preguntas se conservan en Encuesty.')) { await api('/clients/' + id + '/ghl', { method: 'DELETE' }); viewClient(id); } }
+
 async function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   try {
@@ -187,6 +242,8 @@ async function route() {
     if (h[0] === 's') return viewResponses(h[1]);
     if (h[0] === 'respuestas') return viewResponse(h[1]);
     if (h[0] === 'editar') return viewEdit(h[1]);
+    if (h[0] === 'clientes') return viewClients();
+    if (h[0] === 'cliente') return viewClient(h[1]);
     viewList();
   } catch (e) { if (e.message !== 'auth') $.innerHTML = `<div class="card err">${esc(e.message)}</div>`; }
 }

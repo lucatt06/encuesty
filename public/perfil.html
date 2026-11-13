@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Mi perfil</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0e1742">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8fafb;--card:#fff;--ink:#0e1742;--muted:#6a7287;--line:#e4e2da;--cream:#f4f1e9;--brand:#e93b74;--brand-d:#d12a62;--navy:#0e1742;--ok:#16a34a;--warn:#d97706;--err:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif}
+h1,h2,.brand{font-family:'Plus Jakarta Sans',Inter,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--navy);color:#fff}
+.brand{font-weight:800;font-size:22px;letter-spacing:-.5px}.brand b{color:var(--brand)}
+header button{background:transparent;color:#fff;border-color:rgba(255,255,255,.3)}
+main{max-width:900px;margin:0 auto;padding:22px 16px 80px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:26px;box-shadow:0 10px 40px rgba(14,23,66,.06)}
+h1{font-size:28px;line-height:1.15;margin:0 0 4px;font-weight:800;letter-spacing:-.7px}
+h2{font-size:20px;margin:0 0 6px;font-weight:700;letter-spacing:-.3px}
+.muted{color:var(--muted)}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--navy);padding:10px 22px}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff}button.primary:hover{background:var(--brand-d)}
+button.sm{padding:5px 14px;font-size:13px}button.danger{color:var(--err)}
+button:disabled{opacity:.5;cursor:default}
+input[type=email],input[type=text],textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);font:inherit}
+textarea{min-height:90px;resize:vertical}
+input:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:transparent}
+label.q{display:block;font-weight:600;margin:16px 0 6px}
+.error{color:var(--err);font-size:14px;margin-top:8px}
+.tabs{display:flex;gap:6px;margin:18px 0 14px;flex-wrap:wrap}
+.tab{border-radius:999px;padding:8px 20px;font-size:15px}
+.tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.banner{display:flex;gap:10px;align-items:center;background:var(--cream);border-radius:16px;padding:10px 14px;font-size:14px;margin-top:14px}
+.banner.warn{background:#fdebd2}
+.faq{border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin:10px 0;background:#fff}
+.faq .q{font-weight:700}.faq .a{white-space:pre-wrap;margin-top:4px}
+.faq .row{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.ok{background:#dcf3e3;color:var(--ok)}.pill.warn{background:#fdebd2;color:var(--warn)}
+.count{font-size:12px;color:var(--muted);text-align:right;margin-top:2px}
+.form{border:1px solid var(--brand);border-radius:18px;padding:16px;margin:10px 0;background:#fff}
+iframe{width:100%;border:0;display:block;min-height:260px}
+.srv{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-radius:16px;padding:12px 16px;margin:8px 0}
+.gate{max-width:440px;margin:50px auto}
+.saved{font-size:13px;color:var(--ok);min-height:18px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<header><div class="brand">encuesty<b>.</b></div><div id="hdr"></div></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+const $ = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = d => d ? new Date(d).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+let me = null, tab = 'proyectos', editing = null, adding = false, pollTimer = null;
+try { tab = sessionStorage.getItem('perfil-tab') || tab; } catch {}
+async function api(path, opts = {}) {
+  const r = await fetch('/api/perfil' + path, { credentials: 'same-origin', headers: opts.body ? { 'Content-Type': 'application/json' } : {}, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || 'Error'), { status: r.status });
+  return j;
+}
+
+/* ---------- entrada con correo ---------- */
+function gate(needName = false, email = '') {
+  document.getElementById('hdr').innerHTML = '';
+  $.innerHTML = `<div class="card gate"><h1>Mi perfil</h1>
+    <p class="muted">${needName ? 'Es tu primera vez aquí. ¿Cómo te llamas?' : 'Escribe tu correo para ver y actualizar tus proyectos y tus preguntas y respuestas.'}</p>
+    <form id="f"><label class="q">Correo electrónico</label>
+      <input type="email" id="email" required autocomplete="email" value="${esc(email)}" ${needName ? 'readonly' : 'autofocus'} placeholder="tu@correo.com">
+      ${needName ? '<label class="q">Tu nombre</label><input type="text" id="name" required autocomplete="name" autofocus placeholder="Nombre y apellido">' : ''}
+      <div class="error" id="err"></div>
+      <div style="text-align:right;margin-top:16px"><button class="primary" type="submit">${needName ? 'Entrar' : 'Continuar'}</button></div></form></div>`;
+  document.getElementById('f').onsubmit = async ev => {
+    ev.preventDefault(); const btn = ev.submitter; btn.disabled = true;
+    try {
+      const em = document.getElementById('email').value.trim(), nm = document.getElementById('name')?.value.trim() || '';
+      const r = await api('/start', { method: 'POST', body: JSON.stringify({ email: em, name: nm }) });
+      if (r.needName) return gate(true, em);
+      load();
+    } catch (e) { document.getElementById('err').textContent = e.message; btn.disabled = false; }
+  };
+}
+async function load() {
+  try { me = await api('/me'); } catch { return gate(); }
+  document.title = 'Mi perfil · ' + me.name;
+  document.getElementById('hdr').innerHTML = '<button class="sm" onclick="logout()">Salir</button>';
+  render();
+}
+async function logout() { await api('/logout', { method: 'POST' }); me = null; gate(); }
+
+/* ---------- pantalla principal ---------- */
+function banner() {
+  if (!me.connected) return '';
+  if (me.syncError) return '<div class="banner warn">⚠️ <span>Hubo un problema al actualizar tu agente de IA. Ya lo estamos revisando; tus cambios están guardados.</span></div>';
+  return `<div class="banner">🤖 <span>Tu agente de IA está conectado. Lo que cambies aquí se actualiza solo${me.syncedAt ? ' · última actualización: ' + esc(fmt(me.syncedAt)) : ''}.</span></div>`;
+}
+function render() {
+  $.innerHTML = `<h1>Hola, ${esc(me.name)}</h1><div class="muted">${esc(me.email)}</div>${banner()}
+    <div class="tabs">
+      ${[['proyectos', 'Proyectos'], ['faqs', 'Preguntas y respuestas'], ['cuestionarios', 'Mis cuestionarios']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
+    </div><div class="card" id="panel"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; try { sessionStorage.setItem('perfil-tab', tab); } catch {} editing = null; adding = false; render(); });
+  ({ proyectos: panelProyectos, faqs: panelFaqs, cuestionarios: panelCuestionarios })[tab]();
+}
+
+/* ---------- proyectos (editor incrustado) ---------- */
+function panelProyectos() {
+  document.getElementById('panel').innerHTML = `<h2>Mis proyectos</h2>
+    <p class="muted" style="margin:0 0 10px">Aquí están los proyectos que has registrado. Puedes editarlos o añadir más${me.connected ? '; tu agente de IA se actualiza solo' : ''}. Todo se guarda automáticamente.</p>
+    <div class="saved" id="saved"></div>
+    <iframe id="pj" src="/s/__proyectos?embed=1" title="Mis proyectos"></iframe>`;
+}
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data) return;
+  if (e.data.type === 'enc-height') { const f = document.getElementById('pj'); if (f) f.style.height = Math.max(260, e.data.h + 4) + 'px'; }
+  if (e.data.type === 'enc-saved') { const s = document.getElementById('saved'); if (s) s.textContent = e.data.text || ''; if (/Guardado/.test(e.data.text || '')) scheduleRefresh(); }
+});
+
+/* ---------- preguntas y respuestas ---------- */
+function faqBadge(f) {
+  if (!me.connected) return '';
+  return f.state === 'synced' ? '<span class="pill ok">✓ En tu agente</span>' : f.state === 'error' ? '<span class="pill warn">⚠ Reintentando</span>' : '<span class="pill warn">Actualizando…</span>';
+}
+function faqForm(f) {
+  const id = f ? f.id : 'new', max = me.faqMax;
+  return `<div class="form" id="form-${id}">
+    <label class="q" style="margin-top:0">Pregunta</label>
+    <textarea id="fq" maxlength="${max}" placeholder="Escribe aquí la pregunta que suelen hacer tus clientes" style="min-height:64px">${esc(f ? f.question : '')}</textarea><div class="count" id="cq">0 / ${max}</div>
+    <label class="q">Respuesta</label>
+    <textarea id="fa" maxlength="${max}" placeholder="Escribe aquí la respuesta que quieres que dé tu agente">${esc(f ? f.answer : '')}</textarea><div class="count" id="ca">0 / ${max}</div>
+    <div class="error" id="ferr"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button onclick="cancelForm()">Cancelar</button><button class="primary" id="fsave" onclick="saveFaq(${f ? f.id : 'null'})">Guardar</button></div></div>`;
+}
+function panelFaqs() {
+  const p = document.getElementById('panel');
+  p.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><h2>Preguntas y respuestas</h2>
+    <p class="muted" style="margin:0">Escribe las preguntas que tus clientes suelen hacer y la respuesta que quieres que dé tu agente de IA${me.connected ? '. Se actualizan en tu agente automáticamente' : ''}.</p></div>
+    <button class="primary" id="addbtn" ${adding ? 'style="display:none"' : ''}>+ Añadir pregunta y respuesta</button></div>
+    ${adding ? faqForm(null) : ''}
+    <div id="faqlist">${me.faqs.length ? me.faqs.map(f => editing === f.id ? faqForm(f) : `<div class="faq"><div class="q">${esc(f.question)}</div><div class="a">${esc(f.answer)}</div>
+      <div class="row">${faqBadge(f)}<span style="flex:1"></span><button class="sm" onclick="editFaq(${f.id})">Editar</button><button class="sm danger" onclick="delFaq(${f.id})">Eliminar</button></div></div>`).join('') : (adding ? '' : '<p class="muted" style="margin-top:16px">Aún no has añadido preguntas. Empieza con la que más te hacen tus clientes.</p>')}</div>`;
+  const ab = document.getElementById('addbtn'); if (ab) ab.onclick = () => { adding = true; editing = null; panelFaqs(); document.getElementById('fq').focus(); };
+  const fq = document.getElementById('fq'), fa = document.getElementById('fa');
+  if (fq) { const upd = () => { document.getElementById('cq').textContent = fq.value.length + ' / ' + me.faqMax; document.getElementById('ca').textContent = fa.value.length + ' / ' + me.faqMax; }; fq.oninput = fa.oninput = upd; upd(); }
+}
+function cancelForm() { adding = false; editing = null; panelFaqs(); }
+function editFaq(id) { editing = id; adding = false; panelFaqs(); document.getElementById('fq').focus(); }
+async function saveFaq(id) {
+  const q = document.getElementById('fq').value.trim(), a = document.getElementById('fa').value.trim(), err = document.getElementById('ferr'), btn = document.getElementById('fsave');
+  if (!q || !a) return err.textContent = 'Escribe la pregunta y la respuesta.';
+  btn.disabled = true; err.textContent = '';
+  try {
+    await api(id ? '/faqs/' + id : '/faqs', { method: id ? 'PUT' : 'POST', body: JSON.stringify({ question: q, answer: a }) });
+    adding = false; editing = null; await refresh(); scheduleRefresh();
+  } catch (e) { err.textContent = e.message; btn.disabled = false; }
+}
+async function delFaq(id) {
+  if (!confirm('¿Eliminar esta pregunta y respuesta?' + (me.connected ? ' También se quitará de tu agente de IA.' : ''))) return;
+  await api('/faqs/' + id, { method: 'DELETE' }); await refresh(); scheduleRefresh();
+}
+async function refresh() { me = await api('/me'); if (tab === 'faqs') panelFaqs(); const b = document.querySelector('.banner'); if (b) b.outerHTML = banner() || '<span></span>'; }
+// mientras haya cambios pendientes de llegar al agente, se vuelve a consultar el estado
+function scheduleRefresh() {
+  clearTimeout(pollTimer); let n = 0;
+  const tick = async () => {
+    if (!me || !me.connected || n++ > 8) return;
+    try { const m = await api('/me'); const pend = m.faqs.some(f => f.state !== 'synced') || m.pendingSync; me = m; if (tab === 'faqs' && !adding && editing === null) panelFaqs(); const b = document.querySelector('.banner'); if (b) b.outerHTML = banner(); if (pend) pollTimer = setTimeout(tick, 4000); } catch {}
+  };
+  pollTimer = setTimeout(tick, 3000);
+}
+
+/* ---------- cuestionarios ---------- */
+function panelCuestionarios() {
+  document.getElementById('panel').innerHTML = `<h2>Mis cuestionarios</h2><p class="muted" style="margin:0 0 8px">Los cuestionarios que has abierto. Puedes volver a ellos para revisar o actualizar tus respuestas.</p>
+    ${me.surveys.length ? me.surveys.map(s => `<div class="srv"><div><b>${esc(s.title)}</b><div class="muted" style="font-size:13px">${s.status === 'completed' ? 'Completado ' + esc(fmt(s.completed_at)) : 'En curso'}</div></div><a href="/s/${esc(s.slug)}"><button class="sm primary">${s.status === 'completed' ? 'Revisar' : 'Continuar'}</button></a></div>`).join('') : '<p class="muted">Todavía no tienes cuestionarios.</p>'}`;
+}
+load();
+</script>
+</body>
+</html>

@@ -145,6 +145,13 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-card textarea[data-f=payment]::placeholder{font-size:12px}
 .pj-wrap.field-err input,.pj-wrap.field-err textarea{border-color:var(--line)}
 .pj-wrap.field-err .pj-card:first-of-type [data-f=name]{border-color:var(--err)}
+/* --- modo incrustado (dentro del perfil del cliente) --- */
+body.embed{background:transparent}
+.embed .wrap{max-width:none;padding:0}
+.embed .brand,.embed .sticky,.embed .card>h1,.embed .nav,.embed #err{display:none}
+.embed .card{border:0;box-shadow:none;padding:0;background:transparent}
+.embed .sec-h{display:none}
+.embed section:first-of-type .pj-wrap{margin-top:0}
 </style>
 </head>
 <body>
@@ -154,6 +161,8 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 </div>
 <script>
 const slug = location.pathname.split('/')[2];
+const EMBED = new URLSearchParams(location.search).has('embed');
+if (EMBED) document.body.classList.add('embed');
 const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let state = { survey: null, steps: [], step: 0, answers: {}, files: [], name: '', completed: false, saved: '' };
@@ -186,6 +195,7 @@ async function boot() {
   document.title = info.title;
   state.title = info.title;
   try { const me = await api('/me'); return begin(me); } catch {}
+  if (slug === '__proyectos') return $app.innerHTML = '<div class="card center"><p>Tu sesión expiró. <a href="/perfil" target="_top">Vuelve a tu perfil</a> para entrar de nuevo.</p></div>';
   renderLogin(info.title);
 }
 function renderLogin(title, needName = false, email = '') {
@@ -436,7 +446,8 @@ function setAns(id, v) {
 
 /* ---------- guardado automático ---------- */
 function schedule() { setSaved('Guardando…'); clearTimeout(timer); timer = setTimeout(flushSave, 700); }
-function setSaved(t) { state.saved = t; const e = document.getElementById('saved'); if (e) e.textContent = t; }
+function setSaved(t) { state.saved = t; const e = document.getElementById('saved'); if (e) e.textContent = t; if (EMBED) try { parent.postMessage({ type: 'enc-saved', text: t }, location.origin); } catch {} }
+if (EMBED && window.ResizeObserver) new ResizeObserver(() => { try { parent.postMessage({ type: 'enc-height', h: document.documentElement.scrollHeight }, location.origin); } catch {} }).observe(document.body);
 async function flushSave(step) {
   clearTimeout(timer);
   if (saving) { timer = setTimeout(flushSave, 300); return; }
@@ -504,7 +515,8 @@ function renderDone(back) {
   $app.innerHTML = `<div class="card center"><div class="check">✓</div>
     <h2>${back ? 'Ya completaste este cuestionario' : '¡Gracias, ' + esc(state.name) + '!'}</h2>
     <p class="muted">${esc(state.thanks || '')}</p>
-    <p><button id="edit">Revisar o editar mis respuestas</button></p></div>`;
+    <p><button id="edit">Revisar o editar mis respuestas</button></p>
+    <p style="margin-top:18px"><a href="/perfil" style="color:var(--brand);font-weight:600">Ir a mi perfil →</a></p></div>`;
   document.getElementById('edit').onclick = () => { state.completed = false; render(); window.scrollTo({ top: 0 }); };
 }
 boot();

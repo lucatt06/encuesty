@@ -88,6 +88,10 @@ function rateLimit(key, max, windowMs) {
   return arr.length > max;
 }
 
+/* ---------- perfil del cliente + sincronización con GHL (profile.js) ---------- */
+const profile = require('./profile')({ app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB: path.join(__dirname, 'public') });
+app.use((req, res, next) => { profile.setBase(baseUrl(req)); next(); });
+
 /* ---------- correo (GoHighLevel) ---------- */
 const GHL = process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com';
 const ghlHeaders = () => ({ Authorization: `Bearer ${process.env.GHL_API_TOKEN}`, Version: '2021-07-28', 'Content-Type': 'application/json', Accept: 'application/json' });
@@ -172,6 +176,7 @@ async function initDb() {
       console.log('Cuestionario inicial creado: /s/ventas-automatizadas');
     }
   }
+  await profile.init();
 }
 function withIds(items) {
   let n = 0;
@@ -186,6 +191,7 @@ async function getSurveyBySlug(slug) {
 const publicSurvey = (s) => ({ title: s.title, slug: s.slug, schema: s.schema, thanks: s.thanks_message });
 
 app.get('/api/s/:slug', async (req, res) => {
+  if (req.params.slug === profile.VIRTUAL) return res.json({ title: 'Proyectos', thanks: '' });
   const s = await getSurveyBySlug(req.params.slug);
   if (!s || !s.published) return res.status(404).json({ error: 'Este cuestionario no existe o no está disponible.' });
   res.json({ title: s.title, thanks: s.thanks_message });
@@ -212,6 +218,7 @@ app.post('/api/s/:slug/start', async (req, res) => {
        ON CONFLICT (survey_id, client_id) DO UPDATE SET survey_id=EXCLUDED.survey_id RETURNING *`,
       [s.id, client.id])).rows[0];
     setCookie(res, 'enc_' + s.id, makeToken({ r: r.id, s: s.id }), 90);
+    setCookie(res, 'enc_perfil', makeToken({ c: client.id }), 90);
     res.json({ ok: true, name: client.name, ...(await responsePayload(s, r)) });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Error del servidor.' }); }
 });
@@ -223,9 +230,22 @@ async function responsePayload(s, r) {
 
 // Autenticación del cliente por cookie
 async function clientAuth(req, res, next) {
+  if (req.params.slug === profile.VIRTUAL) return profile.virtualAuth(req, res, next);
   const s = await getSurveyBySlug(req.params.slug);
   if (!s) return res.status(404).json({ error: 'No existe.' });
-  const t = readToken(cookies(req)['enc_' + s.id]);
+  let t = readToken(cookies(req)['enc_' + s.id]);
+  if ((!t || t.s !== s.id) && s.published) {
+    // si ya entró a su perfil, también puede abrir sus cuestionarios sin volver a poner el correo
+    const pc = readToken(cookies(req).enc_perfil);
+    if (pc && pc.c) {
+      const ex = (await pool.query('SELECT id FROM clients WHERE id=$1', [pc.c])).rows[0];
+      if (ex) {
+        const nr = (await pool.query(`INSERT INTO responses (survey_id, client_id) VALUES ($1,$2)
+          ON CONFLICT (survey_id, client_id) DO UPDATE SET survey_id=EXCLUDED.survey_id RETURNING id`, [s.id, ex.id])).rows[0];
+        t = { r: nr.id, s: s.id }; setCookie(res, 'enc_' + s.id, makeToken(t), 90);
+      }
+    }
+  }
   if (!t || t.s !== s.id) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
   const r = (await pool.query('SELECT r.*, c.email, c.name FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.id=$1', [t.r])).rows[0];
   if (!r) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
@@ -233,32 +253,43 @@ async function clientAuth(req, res, next) {
 }
 
 app.get('/api/s/:slug/me', clientAuth, async (req, res) => {
+  if (req.virtual) return res.json({ ok: true, name: req.client.name, ...(await profile.virtualPayload(req.client)) });
   res.json({ ok: true, name: req.resp.name, ...(await responsePayload(req.survey, req.resp)) });
 });
 
 // Guardado automático
 app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
   const answers = req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
+  if (req.virtual) { await profile.virtualSave(req.client.id, answers.proyectos); return res.json({ ok: true, savedAt: new Date().toISOString() }); }
   const step = Number.isInteger(req.body.step) ? req.body.step : req.resp.step;
   // se mezcla con lo existente para que un guardado atrasado no borre respuestas
   await pool.query(
     `UPDATE responses SET answers = answers || $1::jsonb, step=$2, updated_at=now(),
      status = CASE WHEN status='completed' THEN 'completed' ELSE 'in_progress' END WHERE id=$3`,
     [JSON.stringify(answers), step, req.resp.id]);
+  profile.afterAnswers(req.survey, req.resp.client_id, answers);
   res.json({ ok: true, savedAt: new Date().toISOString() });
 });
 
 app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibió el archivo.' });
   const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
+  let rid = req.resp.id, qid = req.params.qid;
+  if (req.virtual) {
+    const t = await profile.resolveVirtualFile(req, req.params.qid);
+    if (!t) { await s3Delete([req.file.key]); return res.status(400).json({ error: 'Proyecto no válido.' }); }
+    rid = t.rid; qid = t.qid;
+  }
   const { rows } = await pool.query(
     'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, question_id, filename, size',
-    [req.resp.id, req.params.qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null]);
-  await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [req.resp.id]);
-  res.json({ ok: true, file: rows[0] });
+    [rid, qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null]);
+  await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [rid]);
+  res.json({ ok: true, file: req.virtual ? { ...rows[0], question_id: req.params.qid } : rows[0] });
 });
 app.delete('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
-  const { rows } = await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2 RETURNING s3_key', [req.params.id, req.resp.id]);
+  const { rows } = req.virtual
+    ? await pool.query('DELETE FROM files WHERE id=$1 AND response_id IN (SELECT id FROM responses WHERE client_id=$2) RETURNING s3_key', [req.params.id, req.client.id])
+    : await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2 RETURNING s3_key', [req.params.id, req.resp.id]);
   await s3Delete(rows.map((r) => r.s3_key));
   res.json({ ok: true });
 });
@@ -269,6 +300,7 @@ app.use('/api/s/:slug/upload', (err, req, res, next) => {
 });
 
 app.post('/api/s/:slug/complete', clientAuth, async (req, res) => {
+  if (req.virtual) return res.json({ ok: true });
   await pool.query(
     `UPDATE responses SET status='completed', completed_at=COALESCE(completed_at, now()), updated_at=now()
      WHERE id=$1`, [req.resp.id]);
@@ -308,7 +340,7 @@ app.get('/api/admin/surveys', adminAuth, async (req, res) => {
     SELECT s.id, s.slug, s.title, s.published, s.created_at,
       count(r.id)::int AS total,
       count(r.id) FILTER (WHERE r.status='completed')::int AS completed
-    FROM surveys s LEFT JOIN responses r ON r.survey_id=s.id GROUP BY s.id ORDER BY s.created_at DESC`);
+    FROM surveys s LEFT JOIN responses r ON r.survey_id=s.id WHERE left(s.slug,2) <> '__' GROUP BY s.id ORDER BY s.created_at DESC`);
   res.json({ surveys: rows, baseUrl: baseUrl(req) });
 });
 app.post('/api/admin/surveys', adminAuth, async (req, res) => {
