@@ -175,7 +175,6 @@ module.exports = function (ctx) {
       const p = x.project;
       const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size));
       const am = [...(p.amenities || []), p.amenities_other].map(T).filter(Boolean);
-      const links = (p.links || []).map(T).filter(Boolean);
       return `<section>\n<h2>Proyecto ${i + 1}: ${esc(T(p.name) || '(sin nombre)')}</h2>\n`
         + (T(p.location) ? `<p>Ubicación: ${esc(T(p.location))}</p>\n` : '')
         + (T(p.type) ? `<p>Tipo de proyecto: ${esc(T(p.type))}</p>\n` : '')
@@ -183,7 +182,6 @@ module.exports = function (ctx) {
         + (units.length ? `<h3>Tipos de unidad, precios y metrajes</h3>\n<ul>\n${units.map((u) => `<li>${esc(T(u.type) || 'Unidad')}${T(u.price) ? ' — Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? ' — Metraje: ' + esc(T(u.size)) : ''}</li>`).join('\n')}\n</ul>\n` : '')
         + (T(p.payment) ? `<h3>Plan de pago</h3>\n<p>${nl(T(p.payment))}</p>\n` : '')
         + (am.length ? `<h3>Amenidades</h3>\n<p>${esc(am.join(', '))}</p>\n` : '')
-        + (links.length ? `<h3>Enlaces</h3>\n<ul>\n${links.map((l) => `<li>${esc(l)}</li>`).join('\n')}\n</ul>\n` : '')
         + '</section>';
     }).join('\n');
     return `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<title>Proyectos de ${esc(client.name)}</title>\n</head>\n<body>\n<h1>Proyectos de ${esc(client.name)}</h1>\n`
