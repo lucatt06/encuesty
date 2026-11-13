@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Mi perfil</title>
+<title>Mi empresa</title>
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
@@ -70,7 +70,7 @@ async function api(path, opts = {}) {
 /* ---------- entrada con correo ---------- */
 function gate(needName = false, email = '') {
   document.getElementById('hdr').innerHTML = '';
-  $.innerHTML = `<div class="card gate"><h1>Mi perfil</h1>
+  $.innerHTML = `<div class="card gate"><h1>Mi empresa</h1>
     <p class="muted">${needName ? 'Es tu primera vez aquí. ¿Cómo te llamas?' : 'Escribe tu correo para ver y actualizar tus proyectos y tus preguntas y respuestas.'}</p>
     <form id="f"><label class="q">Correo electrónico</label>
       <input type="email" id="email" required autocomplete="email" value="${esc(email)}" ${needName ? 'readonly' : 'autofocus'} placeholder="tu@correo.com">
@@ -89,7 +89,7 @@ function gate(needName = false, email = '') {
 }
 async function load() {
   try { me = await api('/me'); } catch { return gate(); }
-  document.title = 'Mi perfil · ' + me.name;
+  document.title = 'Mi empresa · ' + me.name;
   document.getElementById('hdr').innerHTML = '<button class="sm" onclick="logout()">Salir</button>';
   render();
 }

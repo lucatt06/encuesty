@@ -152,11 +152,16 @@ body.embed{background:transparent}
 .embed .card{border:0;box-shadow:none;padding:0;background:transparent}
 .embed .sec-h{display:none}
 .embed section:first-of-type .pj-wrap{margin-top:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 4px 14px}
+.topbar .brand{margin:6px 0 0}
+.miemp{display:inline-block;text-decoration:none;font-weight:600;font-size:14px;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 20px}
+.miemp:hover{border-color:var(--brand);color:var(--brand)}
+.embed .topbar{display:none}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">encuesty<b>.</b></div>
+  <div class="topbar"><div class="brand">encuesty<b>.</b></div><a class="miemp" href="/perfil">Mi empresa</a></div>
   <div id="app"><div class="card"><p class="muted">Cargando…</p></div></div>
 </div>
 <script>
@@ -516,7 +521,7 @@ function renderDone(back) {
     <h2>${back ? 'Ya completaste este cuestionario' : '¡Gracias, ' + esc(state.name) + '!'}</h2>
     <p class="muted">${esc(state.thanks || '')}</p>
     <p><button id="edit">Revisar o editar mis respuestas</button></p>
-    <p style="margin-top:18px"><a href="/perfil" style="color:var(--brand);font-weight:600">Ir a mi perfil →</a></p></div>`;
+    <p style="margin-top:18px"><a href="/perfil" style="color:var(--brand);font-weight:600">Ir a Mi empresa →</a></p></div>`;
   document.getElementById('edit').onclick = () => { state.completed = false; render(); window.scrollTo({ top: 0 }); };
 }
 boot();
