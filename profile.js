@@ -447,6 +447,14 @@ module.exports = function (ctx) {
     await pool.query("UPDATE client_faqs SET sync_state='local', ghl_faq_id=NULL, sync_error=NULL WHERE client_id=$1", [req.params.id]);
     res.json({ ok: true });
   });
+  app.put('/api/admin/clients/:id', adminAuth, async (req, res) => {
+    const name = String(req.body.name || '').trim().slice(0, 120);
+    if (!name) return res.status(400).json({ error: 'Escribe un nombre.' });
+    const r = await pool.query('UPDATE clients SET name=$1 WHERE id=$2 RETURNING id', [name, req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'No existe' });
+    markKbDirty(Number(req.params.id)).catch(() => {});
+    res.json({ ok: true, name });
+  });
   app.delete('/api/admin/clients/:id', adminAuth, async (req, res) => {
     const keys = (await pool.query('SELECT f.s3_key FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 AND f.s3_key IS NOT NULL', [req.params.id])).rows.map((r) => r.s3_key);
     const d = await pool.query('DELETE FROM clients WHERE id=$1', [req.params.id]);
