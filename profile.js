@@ -488,9 +488,9 @@ module.exports = function (ctx) {
 
 
   /* ---------- herramienta de envío de documentos para el agente de IA ---------- */
-  const SEND_TYPE = { TYPE_WHATSAPP: 'WhatsApp', TYPE_SMS: 'SMS', TYPE_CAMPAIGN_SMS: 'SMS', TYPE_INSTAGRAM: 'IG', TYPE_FACEBOOK: 'FB', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_WEBCHAT: 'Live_Chat' };
-  const CH_ALIAS = { whatsapp: 'WhatsApp', wa: 'WhatsApp', sms: 'SMS', mms: 'SMS', instagram: 'IG', ig: 'IG', facebook: 'FB', messenger: 'FB', fb: 'FB', chat: 'Live_Chat', webchat: 'Live_Chat', live_chat: 'Live_Chat' };
-  const CH_NAME = { WhatsApp: 'WhatsApp', SMS: 'SMS', IG: 'Instagram', FB: 'Facebook', Live_Chat: 'chat web', Custom: 'canal externo' };
+  const SEND_TYPE = { TYPE_WHATSAPP: 'WhatsApp', TYPE_SMS: 'SMS', TYPE_CAMPAIGN_SMS: 'SMS', TYPE_EMAIL: 'Email', TYPE_CAMPAIGN_EMAIL: 'Email', TYPE_INSTAGRAM: 'IG', TYPE_FACEBOOK: 'FB', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_WEBCHAT: 'Live_Chat' };
+  const CH_ALIAS = { whatsapp: 'WhatsApp', wa: 'WhatsApp', sms: 'SMS', mms: 'SMS', email: 'Email', correo: 'Email', mail: 'Email', instagram: 'IG', ig: 'IG', facebook: 'FB', messenger: 'FB', fb: 'FB', chat: 'Live_Chat', webchat: 'Live_Chat', live_chat: 'Live_Chat' };
+  const CH_NAME = { WhatsApp: 'WhatsApp', SMS: 'SMS', IG: 'Instagram', FB: 'Facebook', Live_Chat: 'chat web', Custom: 'canal externo', Email: 'correo electrónico' };
   const CUSTOM_TYPES = new Set(['TYPE_CUSTOM_PROVIDER_SMS', 'TYPE_CUSTOM_SMS', 'TYPE_CUSTOM_PROVIDER_EMAIL', 'TYPE_CUSTOM_EMAIL']);
   const STOP = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'en', 'para', 'por', 'con', 'al', 'me', 'mi', 'quiero', 'favor', 'envia', 'enviame', 'mandame', 'manda', 'envie', 'documento', 'archivo']);
   const NUMW = { uno: '1', una: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6' };
@@ -556,7 +556,9 @@ module.exports = function (ctx) {
     try {
       const name = safeFileName(d);
       const url = await fileUrl(d, 600, publicBase(), name);
-      const body = { type: channel, contactId, message: T(d.description) };
+      const body = channel === 'Email'
+        ? { type: 'Email', contactId, subject: T(d.description), html: `<p>Hola, te comparto el documento que pediste:</p><p><b>${esc(T(d.description))}</b></p><p>Lo encontrarás adjunto en este correo.</p>` }
+        : { type: channel, contactId, message: T(d.description) };
       if (channel === 'WhatsApp') body.whatsapp = { type: 'media', media: { type: mediaKind(d.mime, d.filename), url, name } };
       else { body.attachments = [url]; if (channel === 'Custom') body.conversationProviderId = ch.providerId; }
       await ghlReq(c, 'POST', '/conversations/messages', { body });
