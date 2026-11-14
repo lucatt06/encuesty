@@ -158,6 +158,7 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
+    ALTER TABLE files ADD COLUMN IF NOT EXISTS description TEXT;
     ALTER TABLE responses ADD COLUMN IF NOT EXISTS share_token TEXT;
     ALTER TABLE responses ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
     CREATE UNIQUE INDEX IF NOT EXISTS responses_share_token_idx ON responses (share_token) WHERE share_token IS NOT NULL;
@@ -224,7 +225,7 @@ app.post('/api/s/:slug/start', async (req, res) => {
 });
 
 async function responsePayload(s, r) {
-  const files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  const files = (await pool.query('SELECT id, question_id, filename, size, description FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
   return { survey: publicSurvey(s), answers: r.answers, step: r.step, status: r.status, files };
 }
 
@@ -281,16 +282,26 @@ app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (r
     rid = t.rid; qid = t.qid;
   }
   const { rows } = await pool.query(
-    'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, question_id, filename, size',
+    'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, question_id, filename, size, description',
     [rid, qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null]);
   await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [rid]);
   res.json({ ok: true, file: req.virtual ? { ...rows[0], question_id: req.params.qid } : rows[0] });
+});
+app.put('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
+  const d = String(req.body.description ?? '').trim().slice(0, 150);
+  const r = req.virtual
+    ? await pool.query('UPDATE files SET description=$1 WHERE id=$2 AND response_id IN (SELECT id FROM responses WHERE client_id=$3) RETURNING id', [d, req.params.id, req.client.id])
+    : await pool.query('UPDATE files SET description=$1 WHERE id=$2 AND response_id=$3 RETURNING id', [d, req.params.id, req.resp.id]);
+  if (!r.rowCount) return res.status(404).json({ error: 'No existe.' });
+  profile.markKbDirty(req.virtual ? req.client.id : req.resp.client_id).catch(() => {});
+  res.json({ ok: true });
 });
 app.delete('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
   const { rows } = req.virtual
     ? await pool.query('DELETE FROM files WHERE id=$1 AND response_id IN (SELECT id FROM responses WHERE client_id=$2) RETURNING s3_key', [req.params.id, req.client.id])
     : await pool.query('DELETE FROM files WHERE id=$1 AND response_id=$2 RETURNING s3_key', [req.params.id, req.resp.id]);
   await s3Delete(rows.map((r) => r.s3_key));
+  profile.markKbDirty(req.virtual ? req.client.id : req.resp.client_id).catch(() => {});
   res.json({ ok: true });
 });
 app.use('/api/s/:slug/upload', (err, req, res, next) => {
@@ -390,7 +401,7 @@ app.get('/api/admin/responses/:id', adminAuth, async (req, res) => {
     `SELECT r.*, c.name, c.email, s.title, s.schema, s.slug FROM responses r
      JOIN clients c ON c.id=r.client_id JOIN surveys s ON s.id=r.survey_id WHERE r.id=$1`, [req.params.id])).rows[0];
   if (!r) return res.status(404).json({ error: 'No existe' });
-  r.files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  r.files = (await pool.query('SELECT id, question_id, filename, size, description FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
   res.json(r);
 });
 app.delete('/api/admin/responses/:id', adminAuth, async (req, res) => {
@@ -438,7 +449,7 @@ app.get('/api/share/:token', async (req, res) => {
   noIndex(res);
   const r = await sharedResponse(req.params.token);
   if (!r) return res.status(404).json({ error: 'Enlace no disponible' });
-  r.files = (await pool.query('SELECT id, question_id, filename, size FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
+  r.files = (await pool.query('SELECT id, question_id, filename, size, description FROM files WHERE response_id=$1 ORDER BY id', [r.id])).rows;
   delete r.id;
   res.json(r);
 });
@@ -456,7 +467,7 @@ app.get('/api/admin/surveys/:id/export.csv', adminAuth, async (req, res) => {
   if (!s) return res.status(404).end();
   const qs = s.schema.items.filter((i) => i.kind === 'question');
   const rows = (await pool.query(
-    `SELECT r.*, c.name, c.email, (SELECT string_agg(f.filename, ' | ') FROM files f WHERE f.response_id=r.id) AS filenames
+    `SELECT r.*, c.name, c.email, (SELECT string_agg(f.filename || COALESCE(' — ' || NULLIF(f.description, ''), ''), ' | ') FROM files f WHERE f.response_id=r.id) AS filenames
      FROM responses r JOIN clients c ON c.id=r.client_id WHERE r.survey_id=$1 ORDER BY r.started_at`, [s.id])).rows;
   const cell = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const head = ['Nombre', 'Correo', 'Estado', 'Inicio', 'Última actualización', 'Completado', ...qs.map((q) => q.label), 'Archivos'];

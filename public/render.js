@@ -18,7 +18,7 @@
         if (it.type === 'project') {
           const prs = Array.isArray(a) ? a : [];
           const blocks = prs.map((pr, n) => {
-            const fl = r.files.filter(f => f.question_id === it.id + '#' + pr.id).map(f => `<div><a href="${fileUrl(f.id)}">📎 ${esc(f.filename)}</a></div>`).join('');
+            const fl = r.files.filter(f => f.question_id === it.id + '#' + pr.id).map(f => `<div><a href="${fileUrl(f.id)}">📎 ${esc(f.filename)}${f.description ? ' — ' + esc(f.description) : ''}</a></div>`).join('');
             const t = fmtProjectsAdmin([pr], { in: '\n', out: '' }, n);
             const lk = (pr.links || []).map(l => `<div><a href="${esc(l)}" target="_blank" rel="noopener">🔗 ${esc(l)}</a></div>`).join('');
             if (!t && !fl && !lk) return '';
@@ -26,7 +26,7 @@
           }).filter(Boolean).join('');
           out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${blocks || '<span class="muted">— sin respuesta —</span>'}</div></div>`; continue; }
         let txt = Array.isArray(a) ? a.join('\n') : (a && typeof a === 'object' ? [a, ...(a.extra || [])].map((x, i) => [x.q ? (i ? 'Pregunta adicional ' + i + ': ' : 'Pregunta: ') + x.q : '', x.a ? 'Respuesta: ' + x.a : ''].filter(Boolean).join(' / ')).filter(Boolean).join('\n\n') : (a ?? ''));
-        const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="${fileUrl(f.id)}">📎 ${esc(f.filename)}</a></div>`).join('');
+        const fl = r.files.filter(f => f.question_id === it.id).map(f => `<div><a href="${fileUrl(f.id)}">📎 ${esc(f.filename)}${f.description ? ' — ' + esc(f.description) : ''}</a></div>`).join('');
         out += `<div class="ans"><div class="l">${esc(it.label)}</div><div class="a">${txt === '' && !fl ? '<span class="muted">— sin respuesta —</span>' : esc(txt)}${fl}</div></div>`;
       }
     }

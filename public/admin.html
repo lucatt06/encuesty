@@ -208,6 +208,10 @@ async function viewClient(id) {
     <div class="card"><h2>Página de proyectos para el Web crawler</h2>
       <p class="muted" style="margin:0 0 8px">Esta es la página de texto con todos los proyectos del cliente. Se registra sola en el Web crawler de su base de conocimientos y se vuelve a leer cuando el cliente cambia algo.</p>
       <div class="row"><input type="text" readonly value="${esc(d.kbUrl)}" onclick="this.select()" style="flex:1;min-width:260px"><button onclick="copy('${esc(d.kbUrl)}',this)">Copiar</button><a class="btn" href="${esc(d.kbUrl)}" target="_blank" rel="noopener">Abrir</a></div></div>
+    <div class="card"><h2>Documentos de los proyectos (${d.docs.length})</h2>
+      <p class="muted" style="margin:0 0 10px">Archivos que el cliente subió, con la descripción que les puso. Cada uno tiene un código que usará la herramienta de envío del agente.</p>
+      <label class="row" style="margin-bottom:10px"><input type="checkbox" ${g.kbDocs ? 'checked' : ''} onchange="toggleKbDocs(${id}, this.checked)"> <span>Incluir esta lista en la base de conocimientos del agente <span class="muted">(actívalo solo cuando la herramienta de envío ya esté configurada en su agente, para que no ofrezca documentos que no puede enviar)</span></span></label>
+      ${d.docs.length ? d.docs.map(f => `<div class="ans"><div class="l">${esc(f.code)} · ${f.description ? esc(f.description) : '<span style="color:var(--warn)">⚠ falta descripción</span>'}</div><div class="a muted" style="font-size:13px">${esc(f.project)} · ${esc(f.filename)} (${f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}) · <a href="/api/admin/files/${f.id}">Descargar</a></div></div>`).join('') : '<p class="muted">Todavía no hay documentos.</p>'}</div>
     <div class="card"><h2>Proyectos (${d.projects.length})</h2>${d.projects.length ? d.projects.map(p => `<div style="margin:10px 0 14px"><div class="muted" style="font-size:12px">Origen: ${esc(p.origin)}</div><div style="white-space:pre-wrap">${esc(p.text)}</div></div>`).join('') : '<p class="muted">Sin proyectos todavía.</p>'}</div>
     <div class="card"><h2>Preguntas y respuestas (${d.faqs.length})</h2>${d.faqs.length ? d.faqs.map(f => `<div class="ans"><div class="l">${esc(f.question)} <span class="pill ${f.state === 'synced' ? 'ok' : f.state === 'local' ? 'off' : 'warn'}">${{ synced: 'En GHL', pending: 'Pendiente', error: 'Error', local: 'Solo en Encuesty' }[f.state] || esc(f.state)}</span></div><div class="a">${esc(f.answer)}</div>${f.error ? `<div class="err">${esc(f.error)}</div>` : ''}</div>`).join('') : '<p class="muted">Sin preguntas todavía.</p>'}</div>`;
 }
@@ -227,6 +231,7 @@ async function saveGhl(id, kbId) {
   } catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   btn.disabled = false;
 }
+async function toggleKbDocs(id, on) { await api('/clients/' + id + '/kbdocs', { method: 'PUT', body: JSON.stringify({ enabled: on }) }); }
 async function syncNow(id, btn) {
   btn.disabled = true; const msg = document.getElementById('gmsg'); msg.innerHTML = '<span class="muted">Sincronizando…</span>';
   try { const r = await api('/clients/' + id + '/sync', { method: 'POST' }); msg.innerHTML = r.ok ? '<div style="color:var(--ok);font-weight:600">✓ Sincronizado.</div>' : `<div class="err">${esc(r.skipped || (r.errors || []).join(' | ') || 'No se pudo sincronizar')}</div>`; }

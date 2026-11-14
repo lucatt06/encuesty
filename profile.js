@@ -32,6 +32,7 @@ module.exports = function (ctx) {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_dirty_at TIMESTAMPTZ;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_synced_at TIMESTAMPTZ;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_error TEXT;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_docs BOOLEAN NOT NULL DEFAULT false;
       CREATE UNIQUE INDEX IF NOT EXISTS clients_kb_token_idx ON clients (kb_token) WHERE kb_token IS NOT NULL;
       CREATE TABLE IF NOT EXISTS client_faqs (
         id SERIAL PRIMARY KEY,
@@ -117,7 +118,7 @@ module.exports = function (ctx) {
   async function virtualPayload(client) {
     const [projs, files] = await Promise.all([
       clientProjects(client.id),
-      pool.query('SELECT f.id, f.question_id, f.filename, f.size FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 ORDER BY f.id', [client.id]),
+      pool.query('SELECT f.id, f.question_id, f.filename, f.size, f.description FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 ORDER BY f.id', [client.id]),
     ]);
     const toVirtual = new Map(projs.map((x) => [`${x.qid}#${x.uid}`, `proyectos#${x.uid}`]));
     const vfiles = files.rows.filter((f) => toVirtual.has(f.question_id)).map((f) => ({ ...f, question_id: toVirtual.get(f.question_id) }));
@@ -171,7 +172,14 @@ module.exports = function (ctx) {
   const nl = (s) => esc(s).replace(/\n/g, '<br>');
   async function kbHtml(client) {
     const projs = (await clientProjects(client.id)).filter((x) => !isBlank(x.project));
+    const docsByKey = new Map();
+    if (client.kb_docs) {
+      const fr = await pool.query(`SELECT f.id, f.question_id, f.description FROM files f JOIN responses r ON r.id=f.response_id
+        WHERE r.client_id=$1 AND length(trim(coalesce(f.description,'')))>0 ORDER BY f.id`, [client.id]);
+      for (const f of fr.rows) { if (!docsByKey.has(f.question_id)) docsByKey.set(f.question_id, []); docsByKey.get(f.question_id).push(f); }
+    }
     const body = projs.map((x, i) => {
+      const docs = docsByKey.get(`${x.qid}#${x.uid}`) || [];
       const p = x.project;
       const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size));
       const am = [...(p.amenities || []), p.amenities_other].map(T).filter(Boolean);
@@ -182,6 +190,7 @@ module.exports = function (ctx) {
         + (units.length ? `<h3>Tipos de unidad, precios y metrajes</h3>\n<ul>\n${units.map((u) => `<li>${esc(T(u.type) || 'Unidad')}${T(u.price) ? ' — Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? ' — Metraje: ' + esc(T(u.size)) : ''}</li>`).join('\n')}\n</ul>\n` : '')
         + (T(p.payment) ? `<h3>Plan de pago</h3>\n<p>${nl(T(p.payment))}</p>\n` : '')
         + (am.length ? `<h3>Amenidades</h3>\n<p>${esc(am.join(', '))}</p>\n` : '')
+        + (docs.length ? `<h3>Documentos que se pueden enviar al cliente</h3>\n<ul>\n${docs.map((d) => `<li>DOC-${d.id} — ${esc(T(d.description))}</li>`).join('\n')}\n</ul>\n` : '')
         + '</section>';
     }).join('\n');
     return `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<title>Proyectos de ${esc(client.name)}</title>\n</head>\n<body>\n<h1>Proyectos de ${esc(client.name)}</h1>\n`
@@ -196,7 +205,7 @@ module.exports = function (ctx) {
   app.get('/kb/:token', async (req, res) => {
     const t = req.params.token;
     if (!/^[A-Za-z0-9_-]{20,64}$/.test(t)) return res.status(404).type('text/plain').send('No disponible');
-    const c = (await pool.query('SELECT id, name FROM clients WHERE kb_token=$1', [t])).rows[0];
+    const c = (await pool.query('SELECT id, name, kb_docs FROM clients WHERE kb_token=$1', [t])).rows[0];
     if (!c) return res.status(404).type('text/plain').send('No disponible');
     res.set('Cache-Control', 'no-cache');
     res.type('html').send(await kbHtml(c));
@@ -380,11 +389,16 @@ module.exports = function (ctx) {
     const c = (await pool.query('SELECT * FROM clients WHERE id=$1', [id])).rows[0]; if (!c) return null;
     setBase(baseUrl(req));
     const token = await ensureKbToken(id);
-    const projs = (await clientProjects(id)).filter((x) => !isBlank(x.project));
+    const allProjs = await clientProjects(id);
+    const projs = allProjs.filter((x) => !isBlank(x.project));
+    const keyToProj = new Map(allProjs.map((x, i) => [`${x.qid}#${x.uid}`, T(x.project.name) || `Proyecto ${i + 1}`]));
+    const docRows = (await pool.query(`SELECT f.id, f.question_id, f.filename, f.size, f.description FROM files f JOIN responses r ON r.id=f.response_id
+      WHERE r.client_id=$1 AND f.question_id LIKE '%#%' ORDER BY f.id`, [id])).rows.filter((f) => keyToProj.has(f.question_id));
     const faqs = (await pool.query("SELECT * FROM client_faqs WHERE client_id=$1 AND sync_state<>'delete' ORDER BY id", [id])).rows;
     return {
       client: { id: c.id, name: c.name, email: c.email },
-      ghl: { hasToken: !!c.ghl_token_enc, locationId: c.ghl_location_id || '', kbId: c.ghl_kb_id || '', connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, error: c.kb_error, dirty: !!c.kb_dirty_at },
+      ghl: { hasToken: !!c.ghl_token_enc, locationId: c.ghl_location_id || '', kbId: c.ghl_kb_id || '', connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, error: c.kb_error, dirty: !!c.kb_dirty_at, kbDocs: !!c.kb_docs },
+      docs: docRows.map((f) => ({ id: f.id, code: `DOC-${f.id}`, filename: f.filename, size: Number(f.size), description: f.description || '', project: keyToProj.get(f.question_id) })),
       kbUrl: `${publicBase()}/kb/${token}`,
       projects: projs.map((x, i) => ({ origin: x.slug === PROFILE_SLUG ? 'Perfil' : x.title, text: projectText(x.project, i + 1) })),
       faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer, state: f.sync_state, error: f.sync_error })),
@@ -438,6 +452,10 @@ module.exports = function (ctx) {
     const d = await pool.query('DELETE FROM clients WHERE id=$1', [req.params.id]);
     await s3Delete(keys);
     res.json({ ok: true, deleted: d.rowCount });
+  });
+  app.put('/api/admin/clients/:id/kbdocs', adminAuth, async (req, res) => {
+    await pool.query(`UPDATE clients SET kb_docs=$1, kb_dirty_at=CASE WHEN ghl_token_enc IS NOT NULL AND ghl_kb_id IS NOT NULL THEN now() ELSE kb_dirty_at END WHERE id=$2`, [!!req.body.enabled, req.params.id]);
+    res.json({ ok: true });
   });
   app.post('/api/admin/clients/:id/sync', adminAuth, async (req, res) => {
     setBase(baseUrl(req));
