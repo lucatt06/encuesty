@@ -488,9 +488,10 @@ module.exports = function (ctx) {
 
 
   /* ---------- herramienta de envío de documentos para el agente de IA ---------- */
-  const SEND_TYPE = { TYPE_WHATSAPP: 'WhatsApp', TYPE_SMS: 'SMS', TYPE_CUSTOM_SMS: 'SMS', TYPE_CUSTOM_PROVIDER_SMS: 'SMS', TYPE_CAMPAIGN_SMS: 'SMS', TYPE_INSTAGRAM: 'IG', TYPE_FACEBOOK: 'FB', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_WEBCHAT: 'Live_Chat' };
+  const SEND_TYPE = { TYPE_WHATSAPP: 'WhatsApp', TYPE_SMS: 'SMS', TYPE_CAMPAIGN_SMS: 'SMS', TYPE_INSTAGRAM: 'IG', TYPE_FACEBOOK: 'FB', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_WEBCHAT: 'Live_Chat' };
   const CH_ALIAS = { whatsapp: 'WhatsApp', wa: 'WhatsApp', sms: 'SMS', mms: 'SMS', instagram: 'IG', ig: 'IG', facebook: 'FB', messenger: 'FB', fb: 'FB', chat: 'Live_Chat', webchat: 'Live_Chat', live_chat: 'Live_Chat' };
-  const CH_NAME = { WhatsApp: 'WhatsApp', SMS: 'SMS', IG: 'Instagram', FB: 'Facebook', Live_Chat: 'chat web' };
+  const CH_NAME = { WhatsApp: 'WhatsApp', SMS: 'SMS', IG: 'Instagram', FB: 'Facebook', Live_Chat: 'chat web', Custom: 'canal externo' };
+  const CUSTOM_TYPES = new Set(['TYPE_CUSTOM_PROVIDER_SMS', 'TYPE_CUSTOM_SMS', 'TYPE_CUSTOM_PROVIDER_EMAIL', 'TYPE_CUSTOM_EMAIL']);
   const STOP = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'en', 'para', 'por', 'con', 'al', 'me', 'mi', 'quiero', 'favor', 'envia', 'enviame', 'mandame', 'manda', 'envie', 'documento', 'archivo']);
   const NUMW = { uno: '1', una: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6' };
   const toks = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean)
@@ -535,6 +536,12 @@ module.exports = function (ctx) {
     const j = await ghlReq(c, 'GET', '/conversations/search', { query: { locationId: c.loc, contactId, limit: 1, sortBy: 'last_message_date', sort: 'desc' } });
     const conv = (j.conversations || [])[0];
     if (!conv) return { error: 'no hay una conversación con ese contacto' };
+    // canales de proveedores externos (p. ej. WhatsApp por QR): GHL pide enviar como "Custom" indicando el proveedor
+    if (CUSTOM_TYPES.has(conv.lastMessageType)) {
+      if (!conv.lastMessageConversationProviderId) return { error: 'el canal externo de esa conversación no indica su proveedor' };
+      const wa = (conv.tags || []).some((t) => /whatsapp/i.test(t));
+      return { type: 'Custom', providerId: conv.lastMessageConversationProviderId, label: wa ? 'WhatsApp (proveedor externo)' : 'canal externo' };
+    }
     const type = SEND_TYPE[conv.lastMessageType];
     return type ? { type } : { error: `no pude saber el canal (último mensaje: ${conv.lastMessageType || 'desconocido'})` };
   }
@@ -543,14 +550,15 @@ module.exports = function (ctx) {
     return (T(d.description).replace(/[\\/:*?"<>|\r\n]+/g, ' ').slice(0, 80).trim() || 'documento') + ext;
   };
   const mediaKind = (mime, name) => (/^image\//i.test(mime) || /\.(jpe?g|png|webp|gif)$/i.test(name)) ? 'image' : (/^video\//i.test(mime) || /\.(mp4|mov|3gp)$/i.test(name)) ? 'video' : 'document';
-  async function sendOne(c, clientId, contactId, channel, d) {
-    const ins = (await pool.query('INSERT INTO agent_sends (client_id, contact_id, file_id, code, description, channel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [clientId, contactId, d.id, d.code, T(d.description), channel])).rows[0].id;
+  async function sendOne(c, clientId, contactId, ch, d) {
+    const channel = ch.type;
+    const ins = (await pool.query('INSERT INTO agent_sends (client_id, contact_id, file_id, code, description, channel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [clientId, contactId, d.id, d.code, T(d.description), ch.label || CH_NAME[channel] || channel])).rows[0].id;
     try {
       const name = safeFileName(d);
       const url = await fileUrl(d, 600, publicBase(), name);
       const body = { type: channel, contactId, message: T(d.description) };
       if (channel === 'WhatsApp') body.whatsapp = { type: 'media', media: { type: mediaKind(d.mime, d.filename), url, name } };
-      else body.attachments = [url];
+      else { body.attachments = [url]; if (channel === 'Custom') body.conversationProviderId = ch.providerId; }
       await ghlReq(c, 'POST', '/conversations/messages', { body });
       await pool.query("UPDATE agent_sends SET status='enviado' WHERE id=$1", [ins]);
     } catch (e) { await pool.query("UPDATE agent_sends SET status='error', error=$1 WHERE id=$2", [e.message.slice(0, 400), ins]); }
@@ -588,9 +596,10 @@ module.exports = function (ctx) {
     let ch;
     try { ch = await detectChannel(c, contactId, src.canal); } catch (e) { console.error('[agente] canal', e.message); return reply({ ok: false, estado: 'error', ...base, mensaje: 'No pude consultar la conversación del cliente en GHL.' }); }
     if (ch.error) return reply({ ok: false, estado: 'error', ...base, mensaje: `No pude enviarlo: ${ch.error}.` });
-    reply({ ok: true, estado: 'enviando', canal: CH_NAME[ch.type] || ch.type, enviados: r.send.map(label), ...base,
-      mensaje: `Estoy enviando ${r.send.length === 1 ? 'el documento' : 'los ' + r.send.length + ' documentos'} por este mismo chat (${CH_NAME[ch.type] || ch.type}), uno por uno.` });
-    setImmediate(async () => { for (const d of r.send) { await sendOne(c, row.id, contactId, ch.type, d); await sleepMs(700); } });
+    const chName = ch.label || CH_NAME[ch.type] || ch.type;
+    reply({ ok: true, estado: 'enviando', canal: chName, enviados: r.send.map(label), ...base,
+      mensaje: `Estoy enviando ${r.send.length === 1 ? 'el documento' : 'los ' + r.send.length + ' documentos'} por este mismo chat (${chName}), uno por uno.` });
+    setImmediate(async () => { for (const d of r.send) { await sendOne(c, row.id, contactId, ch, d); await sleepMs(700); } });
   }
   app.post('/api/agente/:key/enviar', agentSend);
   app.get('/api/agente/:key/enviar', agentSend);
