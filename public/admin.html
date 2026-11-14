@@ -215,8 +215,8 @@ async function viewClient(id) {
     <div class="card"><h2>Herramienta de envío para el agente</h2>
       <p class="muted" style="margin:0 0 10px">Permite que el agente de IA de este cliente envíe documentos (brochure, planos…) por el mismo chat donde habla con el cliente. Se configura en GHL como un <b>Custom API</b>: copia estos valores. No necesita autenticación: la clave secreta va dentro de la dirección.</p>
       ${copyBlock('Dirección (Endpoint URL) · método POST', d.agent.url)}
-      <div class="muted" style="font-size:13px;margin:4px 0 10px">Content-Type: <b>application/json</b> · Autenticación: <b>apagada</b> · Query parameter: <b>contactId</b> = <code>{{contact.id}}</code> <span>(confirma en tu GHL el nombre de la variable del contacto)</span></div>
-      ${copyBlock('Datos que recoge la IA (AI – JSON Schema)', AGENT_SCHEMA)}
+      <div class="muted" style="font-size:13px;margin:4px 0 10px">Content-Type: <b>application/json</b> · Autenticación: <b>apagada</b> · <b>Use a raw JSON body: APAGADO</b> · Query parameter: <b>contactId</b> = <code>{{contact.id}}</code> <span>(confirma en tu GHL el nombre de la variable del contacto)</span></div>
+      ${fieldsBlock()}
       ${copyBlock('¿Cuándo debe usarse la acción? (When should the action take place)', AGENT_WHEN)}
       ${copyBlock('Qué decir después de ejecutarla (What to say after)', AGENT_AFTER)}
       <div class="row" style="margin-top:12px"><button class="primary" onclick="checkPerms(${id}, this)">Probar permisos del token</button><button onclick="regenKey(${id})">Regenerar clave</button></div>
@@ -242,7 +242,20 @@ async function saveGhl(id, kbId) {
   } catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   btn.disabled = false;
 }
-const AGENT_SCHEMA = JSON.stringify({ type: 'object', properties: { documentos: { type: 'string', description: 'Códigos DOC-xx (lo ideal) o descripción de los documentos que pidió el cliente, separados por coma. Ej: DOC-18, DOC-21' }, proyecto: { type: 'string', description: 'Nombre del proyecto al que se refiere el cliente, si lo mencionó' } }, required: ['documentos'] }, null, 2);
+const AGENT_FIELDS = [
+  { name: 'documentos', required: true, desc: 'Códigos DOC-xx (lo ideal) o descripción de los documentos que pidió el cliente, separados por coma. Ej: DOC-18, DOC-21', example: 'DOC-18, DOC-21' },
+  { name: 'proyecto', required: false, desc: 'Nombre del proyecto al que se refiere el cliente, si lo mencionó', example: 'Ecos Del Mar residences' },
+];
+function fieldsBlock() {
+  const cp = (t) => `<button class="sm" data-t="${encodeURIComponent(t)}" onclick="copy(decodeURIComponent(this.dataset.t), this)">Copiar</button>`;
+  return `<div style="margin:8px 0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:3px">Data collection → pestaña «Form» → «Add new» (crea estos 2 campos)</div>` + AGENT_FIELDS.map((f, i) => `<div style="background:var(--cream);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:13px">
+    <div style="font-weight:700;margin-bottom:6px">Campo ${i + 1}${f.required ? '' : ' (opcional)'}</div>
+    <div class="row" style="margin:3px 0"><span style="width:120px" class="muted">Field name</span><code style="flex:1">${esc(f.name)}</code>${cp(f.name)}</div>
+    <div class="row" style="margin:3px 0"><span style="width:120px" class="muted">Tipo / dónde</span><span style="flex:1"><b>String</b> · in: <b>Body</b> · Required: <b>${f.required ? 'marcado ✓' : 'sin marcar'}</b></span></div>
+    <div class="row" style="margin:3px 0;align-items:flex-start"><span style="width:120px" class="muted">Description</span><span style="flex:1">${esc(f.desc)}</span>${cp(f.desc)}</div>
+    <div class="row" style="margin:3px 0"><span style="width:120px" class="muted">Example</span><span style="flex:1">${esc(f.example)}</span>${cp(f.example)}</div>
+    <div class="row" style="margin:3px 0"><span style="width:120px" class="muted">Enums</span><span class="muted">déjalo vacío</span></div></div>`).join('') + '</div>';
+}
 const AGENT_WHEN = 'Úsala cuando el cliente pida que le envíes un documento de un proyecto: brochure, plano, lista de precios, fotos o video. Antes, confirma de qué proyecto y qué documento quiere. En la base de conocimientos cada proyecto tiene la lista «Documentos que se pueden enviar al cliente» con códigos DOC-xx: pasa en «documentos» el código exacto; si pide varios, sepáralos con coma. No la uses si el documento no está en esa lista.';
 const AGENT_AFTER = 'Dile que ya le estás enviando el documento por este mismo chat. Si la respuesta dice que no lo encontraste o que hay varias opciones, pregúntale cuál quiere. No menciones que usaste una herramienta.';
 function copyBlock(label, text) {
