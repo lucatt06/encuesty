@@ -211,7 +211,18 @@ async function viewClient(id) {
     <div class="card"><h2>Documentos de los proyectos (${d.docs.length})</h2>
       <p class="muted" style="margin:0 0 10px">Archivos que el cliente subió, con la descripción que les puso. Cada uno tiene un código que usará la herramienta de envío del agente.</p>
       <label class="row" style="margin-bottom:10px"><input type="checkbox" ${g.kbDocs ? 'checked' : ''} onchange="toggleKbDocs(${id}, this.checked)"> <span>Incluir esta lista en la base de conocimientos del agente <span class="muted">(actívalo solo cuando la herramienta de envío ya esté configurada en su agente, para que no ofrezca documentos que no puede enviar)</span></span></label>
-      ${d.docs.length ? d.docs.map(f => `<div class="ans"><div class="l">${esc(f.code)} · ${f.description ? esc(f.description) : '<span style="color:var(--warn)">⚠ falta descripción</span>'}</div><div class="a muted" style="font-size:13px">${esc(f.project)} · ${esc(f.filename)} (${f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}) · <a href="/api/admin/files/${f.id}">Descargar</a></div></div>`).join('') : '<p class="muted">Todavía no hay documentos.</p>'}</div>
+      ${d.docs.length ? d.docs.map(f => `<div class="ans"><div class="l">${esc(f.code)} · ${f.description ? esc(f.description) : '<span style="color:var(--warn)">⚠ falta descripción</span>'}</div><div class="a muted" style="font-size:13px">${esc(f.project)} · ${esc(f.filename)} (${f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}) · <a href="/api/admin/files/${f.id}">Descargar</a> · <a href="#" onclick="editDocDesc(${f.id}, ${id}, this.dataset.d); return false" data-d="${esc(f.description)}">Editar descripción</a></div></div>`).join('') : '<p class="muted">Todavía no hay documentos.</p>'}</div>
+    <div class="card"><h2>Herramienta de envío para el agente</h2>
+      <p class="muted" style="margin:0 0 10px">Permite que el agente de IA de este cliente envíe documentos (brochure, planos…) por el mismo chat donde habla con el cliente. Se configura en GHL como un <b>Custom API</b>: copia estos valores. No necesita autenticación: la clave secreta va dentro de la dirección.</p>
+      ${copyBlock('Dirección (Endpoint URL) · método POST', d.agent.url)}
+      <div class="muted" style="font-size:13px;margin:4px 0 10px">Content-Type: <b>application/json</b> · Autenticación: <b>apagada</b> · Query parameter: <b>contactId</b> = <code>{{contact.id}}</code> <span>(confirma en tu GHL el nombre de la variable del contacto)</span></div>
+      ${copyBlock('Datos que recoge la IA (AI – JSON Schema)', AGENT_SCHEMA)}
+      ${copyBlock('¿Cuándo debe usarse la acción? (When should the action take place)', AGENT_WHEN)}
+      ${copyBlock('Qué decir después de ejecutarla (What to say after)', AGENT_AFTER)}
+      <div class="row" style="margin-top:12px"><button class="primary" onclick="checkPerms(${id}, this)">Probar permisos del token</button><button onclick="regenKey(${id})">Regenerar clave</button></div>
+      <div id="permres" style="margin-top:10px"></div>
+      <h2 style="margin-top:18px">Envíos recientes (${d.agent.sends.length})</h2>
+      ${d.agent.sends.length ? '<div style="overflow:auto"><table><tr><th>Fecha</th><th>Contacto</th><th>Documento</th><th>Canal</th><th>Estado</th></tr>' + d.agent.sends.map(x => `<tr><td>${esc(fmt(x.created_at))}</td><td><code>${esc(x.contact_id)}</code></td><td>${esc(x.code)} · ${esc(x.description)}</td><td>${esc(x.channel)}</td><td><span class="pill ${x.status === 'enviado' ? 'ok' : x.status === 'error' ? 'warn' : 'off'}">${esc(x.status)}</span>${x.error ? `<div class="err" style="font-size:12px">${esc(x.error)}</div>` : ''}</td></tr>`).join('') + '</table></div>' : '<p class="muted">Aún no se ha enviado ningún documento.</p>'}</div>
     <div class="card"><h2>Proyectos (${d.projects.length})</h2>${d.projects.length ? d.projects.map(p => `<div style="margin:10px 0 14px"><div class="muted" style="font-size:12px">Origen: ${esc(p.origin)}</div><div style="white-space:pre-wrap">${esc(p.text)}</div></div>`).join('') : '<p class="muted">Sin proyectos todavía.</p>'}</div>
     <div class="card"><h2>Preguntas y respuestas (${d.faqs.length})</h2>${d.faqs.length ? d.faqs.map(f => `<div class="ans"><div class="l">${esc(f.question)} <span class="pill ${f.state === 'synced' ? 'ok' : f.state === 'local' ? 'off' : 'warn'}">${{ synced: 'En GHL', pending: 'Pendiente', error: 'Error', local: 'Solo en Encuesty' }[f.state] || esc(f.state)}</span></div><div class="a">${esc(f.answer)}</div>${f.error ? `<div class="err">${esc(f.error)}</div>` : ''}</div>`).join('') : '<p class="muted">Sin preguntas todavía.</p>'}</div>`;
 }
@@ -231,6 +242,22 @@ async function saveGhl(id, kbId) {
   } catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   btn.disabled = false;
 }
+const AGENT_SCHEMA = JSON.stringify({ type: 'object', properties: { documentos: { type: 'string', description: 'Códigos DOC-xx (lo ideal) o descripción de los documentos que pidió el cliente, separados por coma. Ej: DOC-18, DOC-21' }, proyecto: { type: 'string', description: 'Nombre del proyecto al que se refiere el cliente, si lo mencionó' } }, required: ['documentos'] }, null, 2);
+const AGENT_WHEN = 'Úsala cuando el cliente pida que le envíes un documento de un proyecto: brochure, plano, lista de precios, fotos o video. Antes, confirma de qué proyecto y qué documento quiere. En la base de conocimientos cada proyecto tiene la lista «Documentos que se pueden enviar al cliente» con códigos DOC-xx: pasa en «documentos» el código exacto; si pide varios, sepáralos con coma. No la uses si el documento no está en esa lista.';
+const AGENT_AFTER = 'Dile que ya le estás enviando el documento por este mismo chat. Si la respuesta dice que no lo encontraste o que hay varias opciones, pregúntale cuál quiere. No menciones que usaste una herramienta.';
+function copyBlock(label, text) {
+  return `<div style="margin:8px 0"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:3px">${esc(label)}</div><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><pre style="flex:1;margin:0;white-space:pre-wrap;word-break:break-all;background:var(--cream);border-radius:10px;padding:8px 10px;font-size:12.5px;max-height:160px;overflow:auto">${esc(text)}</pre><button class="sm" data-t="${encodeURIComponent(text)}" onclick="copy(decodeURIComponent(this.dataset.t), this)">Copiar</button></div></div>`;
+}
+async function checkPerms(id, btn) {
+  btn.disabled = true; const box = document.getElementById('permres'); box.innerHTML = '<span class="muted">Probando… (no se envía ningún mensaje)</span>';
+  try {
+    const r = await api('/clients/' + id + '/ghl/permisos', { method: 'POST' });
+    box.innerHTML = r.error ? `<div class="err">${esc(r.error)}</div>` : r.checks.map(c => `<div>${c.ok ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--err)">✗</span>'} ${esc(c.name)}${c.ok ? '' : ` <span class="err">— falta el permiso (respuesta ${esc(c.estado)})</span>`}</div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  btn.disabled = false;
+}
+async function regenKey(id) { if (confirm('¿Regenerar la clave? La dirección actual dejará de funcionar y tendrás que pegar la nueva en el agente de GHL.')) { await api('/clients/' + id + '/agent-key', { method: 'POST' }); viewClient(id); } }
+async function editDocDesc(fid, cid, cur) { const n = prompt('¿Qué archivo es este? (descripción específica, máx. 150 caracteres)', cur || ''); if (n !== null && n.trim() !== (cur || '')) { await api('/files/' + fid + '/description', { method: 'PUT', body: JSON.stringify({ description: n.trim() }) }); viewClient(cid); } }
 async function toggleKbDocs(id, on) { await api('/clients/' + id + '/kbdocs', { method: 'PUT', body: JSON.stringify({ enabled: on }) }); }
 async function syncNow(id, btn) {
   btn.disabled = true; const msg = document.getElementById('gmsg'); msg.innerHTML = '<span class="muted">Sincronizando…</span>';

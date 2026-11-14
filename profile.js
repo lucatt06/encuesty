@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const util = require('util');
 
 module.exports = function (ctx) {
-  const { app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB } = ctx;
+  const { app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB, fileUrl } = ctx;
   const path = require('path');
   const GHL_BASE = process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com';
   const DEBOUNCE_MS = Number(process.env.KB_DEBOUNCE_MS || 60000);
@@ -33,6 +33,20 @@ module.exports = function (ctx) {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_synced_at TIMESTAMPTZ;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_error TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_docs BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS agent_key TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS clients_agent_key_idx ON clients (agent_key) WHERE agent_key IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS agent_sends (
+        id SERIAL PRIMARY KEY,
+        client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL,
+        file_id INT,
+        code TEXT,
+        description TEXT,
+        channel TEXT,
+        status TEXT NOT NULL DEFAULT 'pendiente',
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
       CREATE UNIQUE INDEX IF NOT EXISTS clients_kb_token_idx ON clients (kb_token) WHERE kb_token IS NOT NULL;
       CREATE TABLE IF NOT EXISTS client_faqs (
         id SERIAL PRIMARY KEY,
@@ -402,6 +416,7 @@ module.exports = function (ctx) {
       kbUrl: `${publicBase()}/kb/${token}`,
       projects: projs.map((x, i) => ({ origin: x.slug === PROFILE_SLUG ? 'Perfil' : x.title, text: projectText(x.project, i + 1) })),
       faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer, state: f.sync_state, error: f.sync_error })),
+      agent: await agentInfo(req, id),
     };
   }
   app.get('/api/admin/clients/:id', adminAuth, async (req, res) => {
@@ -469,6 +484,147 @@ module.exports = function (ctx) {
     setBase(baseUrl(req));
     const r = await syncClient(Number(req.params.id), { force: true });
     res.json(r);
+  });
+
+
+  /* ---------- herramienta de envío de documentos para el agente de IA ---------- */
+  const SEND_TYPE = { TYPE_WHATSAPP: 'WhatsApp', TYPE_SMS: 'SMS', TYPE_CUSTOM_SMS: 'SMS', TYPE_CUSTOM_PROVIDER_SMS: 'SMS', TYPE_CAMPAIGN_SMS: 'SMS', TYPE_INSTAGRAM: 'IG', TYPE_FACEBOOK: 'FB', TYPE_LIVE_CHAT: 'Live_Chat', TYPE_WEBCHAT: 'Live_Chat' };
+  const CH_ALIAS = { whatsapp: 'WhatsApp', wa: 'WhatsApp', sms: 'SMS', mms: 'SMS', instagram: 'IG', ig: 'IG', facebook: 'FB', messenger: 'FB', fb: 'FB', chat: 'Live_Chat', webchat: 'Live_Chat', live_chat: 'Live_Chat' };
+  const CH_NAME = { WhatsApp: 'WhatsApp', SMS: 'SMS', IG: 'Instagram', FB: 'Facebook', Live_Chat: 'chat web' };
+  const STOP = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'en', 'para', 'por', 'con', 'al', 'me', 'mi', 'quiero', 'favor', 'envia', 'enviame', 'mandame', 'manda', 'envie', 'documento', 'archivo']);
+  const NUMW = { uno: '1', una: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6' };
+  const toks = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean)
+    .map((w) => NUMW[w] || w).filter((w) => !STOP.has(w))
+    .map((w) => (w.length > 4 && w.endsWith('ones') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
+  const score = (q, set) => (q.length ? q.filter((w) => set.has(w)).length / q.length : 0);
+  const newKey = () => crypto.randomBytes(24).toString('base64url');
+  async function ensureAgentKey(clientId) {
+    const { rows } = await pool.query('UPDATE clients SET agent_key=COALESCE(agent_key,$1) WHERE id=$2 RETURNING agent_key', [newKey(), clientId]);
+    return rows[0] && rows[0].agent_key;
+  }
+  // documentos que el agente puede enviar: archivos con descripción, de los proyectos de este cliente
+  async function sendableDocs(clientId) {
+    const projs = await clientProjects(clientId);
+    const names = new Map(projs.map((x, i) => [`${x.qid}#${x.uid}`, T(x.project.name) || `Proyecto ${i + 1}`]));
+    const { rows } = await pool.query(`SELECT f.id, f.filename, f.mime, f.size, f.description, f.question_id, f.s3_key FROM files f JOIN responses r ON r.id=f.response_id
+      WHERE r.client_id=$1 AND f.question_id LIKE '%#%' AND length(trim(coalesce(f.description,'')))>0 ORDER BY f.id`, [clientId]);
+    return rows.filter((f) => names.has(f.question_id)).map((f) => ({ ...f, code: `DOC-${f.id}`, project: names.get(f.question_id), set: new Set([...toks(f.description), ...toks(names.get(f.question_id))]) }));
+  }
+  const label = (d) => `${d.code} · ${T(d.description)} (${d.project})`;
+  function resolveRequests(rawList, docs, project) {
+    const out = { send: [], notFound: [], ambiguous: [] }; const seen = new Set();
+    let pool_ = docs;
+    if (project) { const pq = toks(project); if (pq.length) { const hit = docs.filter((d) => score(pq, new Set(toks(d.project))) >= 0.6); if (hit.length) pool_ = hit; } }
+    const add = (d) => { if (!seen.has(d.id)) { seen.add(d.id); out.send.push(d); } };
+    for (const raw of rawList) {
+      const codes = [...String(raw).matchAll(/DOC-?\s*(\d+)/gi)].map((m) => Number(m[1]));
+      if (codes.length) { for (const id of codes) { const d = docs.find((x) => x.id === id); if (d) add(d); else out.notFound.push(`DOC-${id}`); } continue; }
+      const q = toks(raw); if (!q.length) continue;
+      const ranked = pool_.map((d) => ({ d, s: score(q, d.set) })).sort((a, b) => b.s - a.s);
+      const best = ranked[0];
+      if (!best || best.s < 0.6) { out.notFound.push(String(raw).trim()); continue; }
+      const close = ranked.filter((r) => r.s >= 0.6 && r.s >= best.s - 0.2);
+      if (close.length > 1) out.ambiguous.push({ pedido: String(raw).trim(), opciones: close.slice(0, 5).map((r) => label(r.d)) });
+      else add(best.d);
+    }
+    return out;
+  }
+  async function detectChannel(c, contactId, override) {
+    const k = String(override || '').toLowerCase().replace(/[\s-]+/g, '_');
+    if (CH_ALIAS[k]) return { type: CH_ALIAS[k] };
+    const j = await ghlReq(c, 'GET', '/conversations/search', { query: { locationId: c.loc, contactId, limit: 1, sortBy: 'last_message_date', sort: 'desc' } });
+    const conv = (j.conversations || [])[0];
+    if (!conv) return { error: 'no hay una conversación con ese contacto' };
+    const type = SEND_TYPE[conv.lastMessageType];
+    return type ? { type } : { error: `no pude saber el canal (último mensaje: ${conv.lastMessageType || 'desconocido'})` };
+  }
+  const safeFileName = (d) => {
+    const ext = (String(d.filename).match(/\.[A-Za-z0-9]{1,5}$/) || [''])[0];
+    return (T(d.description).replace(/[\\/:*?"<>|\r\n]+/g, ' ').slice(0, 80).trim() || 'documento') + ext;
+  };
+  const mediaKind = (mime, name) => (/^image\//i.test(mime) || /\.(jpe?g|png|webp|gif)$/i.test(name)) ? 'image' : (/^video\//i.test(mime) || /\.(mp4|mov|3gp)$/i.test(name)) ? 'video' : 'document';
+  async function sendOne(c, clientId, contactId, channel, d) {
+    const ins = (await pool.query('INSERT INTO agent_sends (client_id, contact_id, file_id, code, description, channel) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [clientId, contactId, d.id, d.code, T(d.description), channel])).rows[0].id;
+    try {
+      const name = safeFileName(d);
+      const url = await fileUrl(d, 600, publicBase(), name);
+      const body = { type: channel, contactId, message: T(d.description) };
+      if (channel === 'WhatsApp') body.whatsapp = { type: 'media', media: { type: mediaKind(d.mime, d.filename), url, name } };
+      else body.attachments = [url];
+      await ghlReq(c, 'POST', '/conversations/messages', { body });
+      await pool.query("UPDATE agent_sends SET status='enviado' WHERE id=$1", [ins]);
+    } catch (e) { await pool.query("UPDATE agent_sends SET status='error', error=$1 WHERE id=$2", [e.message.slice(0, 400), ins]); }
+  }
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function agentSend(req, res) {
+    const key = req.params.key;
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(key)) return res.status(404).json({ ok: false, mensaje: 'No disponible' });
+    if (rateLimit('agent:' + key, 40, 60 * 1000)) return res.status(429).json({ ok: false, mensaje: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' });
+    const row = (await pool.query('SELECT * FROM clients WHERE agent_key=$1', [key])).rows[0];
+    if (!row) return res.status(404).json({ ok: false, mensaje: 'No disponible' });
+    const reply = (j) => res.json({ ok: !!j.ok, ...j });
+    const c = connOf(row);
+    if (!c) return reply({ ok: false, estado: 'sin_conexion', mensaje: 'No puedo enviar documentos: este negocio no tiene la conexión con GHL configurada.' });
+    const src = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+    const contactId = String(src.contactId || src.contact_id || '').trim();
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(contactId)) return reply({ ok: false, estado: 'error', mensaje: 'Falta el id del contacto o no es válido.' });
+    let raw = src.documentos ?? src.documento ?? src.documents ?? src.codigos ?? '';
+    raw = Array.isArray(raw) ? raw.map(String) : String(raw).split(/[\n;,|]+/);
+    raw = raw.map((x) => x.trim()).filter(Boolean).slice(0, 10);
+    if (!raw.length) return reply({ ok: false, estado: 'error', mensaje: 'Indica qué documentos quiere el cliente (códigos DOC-xx o su descripción).' });
+    const docs = await sendableDocs(row.id);
+    if (!docs.length) return reply({ ok: false, estado: 'sin_documentos', mensaje: 'Este negocio todavía no tiene documentos disponibles para enviar.' });
+    const r = resolveRequests(raw, docs, src.proyecto);
+    // evita reenvíos si la IA reintenta: mismo documento al mismo contacto en los últimos 2 minutos
+    const recent = (await pool.query("SELECT file_id FROM agent_sends WHERE client_id=$1 AND contact_id=$2 AND created_at > now() - interval '2 minutes' AND status<>'error'", [row.id, contactId])).rows.map((x) => x.file_id);
+    const already = r.send.filter((d) => recent.includes(d.id)); r.send = r.send.filter((d) => !recent.includes(d.id));
+    const base = { no_encontrados: r.notFound, ambiguos: r.ambiguous, ya_enviados_hace_poco: already.map(label) };
+    if (!r.send.length) {
+      const hay = !r.notFound.length && !r.ambiguous.length && already.length;
+      return reply({ ok: hay, estado: hay ? 'ya_enviado' : 'nada_que_enviar', ...base,
+        mensaje: hay ? 'Ese documento ya se le envió hace un momento.' : r.ambiguous.length ? 'Hay varias opciones parecidas: pregúntale al cliente cuál quiere.' : 'No encontré ese documento. Estos son los disponibles.',
+        disponibles: (r.notFound.length || r.ambiguous.length) ? docs.slice(0, 20).map(label) : undefined });
+    }
+    let ch;
+    try { ch = await detectChannel(c, contactId, src.canal); } catch (e) { console.error('[agente] canal', e.message); return reply({ ok: false, estado: 'error', ...base, mensaje: 'No pude consultar la conversación del cliente en GHL.' }); }
+    if (ch.error) return reply({ ok: false, estado: 'error', ...base, mensaje: `No pude enviarlo: ${ch.error}.` });
+    reply({ ok: true, estado: 'enviando', canal: CH_NAME[ch.type] || ch.type, enviados: r.send.map(label), ...base,
+      mensaje: `Estoy enviando ${r.send.length === 1 ? 'el documento' : 'los ' + r.send.length + ' documentos'} por este mismo chat (${CH_NAME[ch.type] || ch.type}), uno por uno.` });
+    setImmediate(async () => { for (const d of r.send) { await sendOne(c, row.id, contactId, ch.type, d); await sleepMs(700); } });
+  }
+  app.post('/api/agente/:key/enviar', agentSend);
+  app.get('/api/agente/:key/enviar', agentSend);
+
+  // administración de la herramienta
+  async function agentInfo(req, id) {
+    const key = await ensureAgentKey(id);
+    const sends = (await pool.query('SELECT id, contact_id, code, description, channel, status, error, created_at FROM agent_sends WHERE client_id=$1 ORDER BY id DESC LIMIT 30', [id])).rows;
+    return { url: `${publicBase() || baseUrl(req)}/api/agente/${key}/enviar`, sends };
+  }
+  app.post('/api/admin/clients/:id/agent-key', adminAuth, async (req, res) => {
+    await pool.query('UPDATE clients SET agent_key=$1 WHERE id=$2', [newKey(), req.params.id]);
+    res.json({ ok: true, ...(await agentInfo(req, req.params.id)) });
+  });
+  app.put('/api/admin/files/:id/description', adminAuth, async (req, res) => {
+    const d = String(req.body.description ?? '').trim().slice(0, 150);
+    const r = await pool.query('UPDATE files SET description=$1 WHERE id=$2 AND question_id LIKE \'%#%\' RETURNING response_id', [d, req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'No existe' });
+    const cl = (await pool.query('SELECT client_id FROM responses WHERE id=$1', [r.rows[0].response_id])).rows[0];
+    if (cl) markKbDirty(cl.client_id).catch(() => {});
+    res.json({ ok: true });
+  });
+  // ¿el token de este cliente tiene los permisos necesarios? (no envía nada: solo devuelve acierto/fallo)
+  app.post('/api/admin/clients/:id/ghl/permisos', adminAuth, async (req, res) => {
+    const row = (await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id])).rows[0];
+    const c = row && connOf(row); if (!c) return res.json({ ok: false, error: 'Este cliente no tiene la conexión con GHL configurada.' });
+    const code = (e) => Number((/→ (\d{3}):/.exec(e.message) || [])[1] || 0);
+    const checks = [];
+    const probe = async (name, fn, okIf) => { try { await fn(); checks.push({ name, ok: true }); } catch (e) { const st = code(e); checks.push({ name, ok: okIf ? okIf(st) : false, estado: st || e.message.slice(0, 80) }); } };
+    await probe('Base de conocimientos (leer y escribir las preguntas)', () => ghlReq(c, 'GET', '/knowledge-bases/', { query: { locationId: c.loc, limit: 1 } }));
+    await probe('Conversaciones (ver por qué canal escribe el cliente)', () => ghlReq(c, 'GET', '/conversations/search', { query: { locationId: c.loc, limit: 1 } }));
+    // sin enviar nada: contacto inexistente. Un error de validación (400/404/422) significa que el permiso existe; 401/403 que falta.
+    await probe('Enviar mensajes y archivos', () => ghlReq(c, 'POST', '/conversations/messages', { body: { type: 'SMS', contactId: 'inexistente0000000000', message: 'prueba' } }), (st) => [400, 404, 422].includes(st));
+    res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };

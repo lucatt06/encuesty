@@ -89,7 +89,7 @@ function rateLimit(key, max, windowMs) {
 }
 
 /* ---------- perfil del cliente + sincronización con GHL (profile.js) ---------- */
-const profile = require('./profile')({ app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB: path.join(__dirname, 'public') });
+const profile = require('./profile')({ app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB: path.join(__dirname, 'public'), fileUrl: (...a) => fileSignedUrl(...a) });
 app.use((req, res, next) => { profile.setBase(baseUrl(req)); next(); });
 
 /* ---------- correo (GoHighLevel) ---------- */
@@ -424,6 +424,26 @@ app.get('/api/admin/files/:id', adminAuth, async (req, res) => {
   const f = (await pool.query('SELECT * FROM files WHERE id=$1', [req.params.id])).rows[0];
   if (!f) return res.status(404).end();
   await sendStoredFile(res, f);
+});
+
+// Dirección temporal (10 min) para que GHL descargue un archivo y lo envíe. El archivo no queda público.
+const asciiName = (n) => String(n || 'archivo').replace(/[\r\n"\\]/g, '').slice(0, 120);
+async function fileSignedUrl(f, ttl = 600, base = '', niceName = '') {
+  const name = asciiName(niceName || f.filename);
+  if (f.s3_key) {
+    return S3.getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: f.s3_key,
+      ResponseContentType: f.mime, ResponseContentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(name)}` }), { expiresIn: ttl });
+  }
+  return `${base}/f/${makeToken({ f: f.id, exp: Date.now() + ttl * 1000, n: name })}`;
+}
+app.get('/f/:token', async (req, res) => {
+  const t = readToken(req.params.token);
+  if (!t || !t.f || !(t.exp > Date.now())) return res.status(404).end();
+  const f = (await pool.query('SELECT * FROM files WHERE id=$1', [t.f])).rows[0];
+  if (!f || f.s3_key) return res.status(404).end();
+  res.setHeader('Content-Type', f.mime);
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(asciiName(t.n || f.filename))}`);
+  res.send(f.data);
 });
 
 /* ---------- compartir respuestas (enlace público de solo lectura) ---------- */
