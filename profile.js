@@ -675,5 +675,15 @@ module.exports = function (ctx) {
     res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
+  // TEMPORAL (diagnostico): proxy admin a /knowledge-bases de GHL. Se elimina tras la prueba.
+  app.post('/api/admin/clients/:id/ghl/raw', adminAuth, async (req, res) => {
+    const row = (await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id])).rows[0];
+    const c = row && connOf(row); if (!c) return res.json({ ok: false, error: 'sin conexion' });
+    const { method, path, query, body } = req.body || {};
+    if (!/^\/knowledge-bases(\/|$)/.test(String(path || '')) || !['GET', 'POST', 'PUT', 'DELETE'].includes(method)) return res.status(400).json({ error: 'ruta no permitida' });
+    try { res.json({ ok: true, r: await ghlReq(c, method, path, { query: { locationId: c.loc, ...(query || {}) }, body }) }); }
+    catch (e) { res.json({ ok: false, error: e.message }); }
+  });
+
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
