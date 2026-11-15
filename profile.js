@@ -205,9 +205,9 @@ module.exports = function (ctx) {
         + (T(p.type) ? line('Tipo de proyecto', esc(T(p.type))) : '')
         + (T(p.delivery) ? line('Fecha de entrega', esc(T(p.delivery))) : '')
         + units.map((u) => line('Unidades y precios', `${esc(T(u.type) || 'Unidad')}${T(u.price) ? '. Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? '. Metraje: ' + esc(T(u.size)) : ''}`)).join('')
-        + (T(p.payment) ? line('Plan de pago', nl(T(p.payment))) : '')
+        + (T(p.payment) ? line('Plan de pago', esc(T(p.payment).split(/\r?\n+/).map((x) => x.trim()).filter(Boolean).join('; '))) : '')
         + (am.length ? line('Amenidades', esc(am.join(', '))) : '')
-        + docs.map((d) => line('Documento que se puede enviar al cliente', `DOC-${d.id} (${esc(T(d.description))})`)).join('')
+        + (docs.length ? line(docs.length > 1 ? 'Documentos que se pueden enviar al cliente' : 'Documento que se puede enviar al cliente', docs.map((d) => `DOC-${d.id} (${esc(T(d.description))})`).join('; ')) : '')
         + '</section>';
     }).join('\n');
     return `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<title>Proyectos de ${esc(client.name)}</title>\n</head>\n<body>\n<h1>Proyectos de ${esc(client.name)}</h1>\n`
