@@ -36,6 +36,19 @@ module.exports = function (ctx) {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS kb_docs BOOLEAN NOT NULL DEFAULT false;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS agent_key TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS clients_agent_key_idx ON clients (agent_key) WHERE agent_key IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS agent_calls (
+        id SERIAL PRIMARY KEY,
+        client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        contact_id TEXT,
+        asked TEXT,
+        project TEXT,
+        estado TEXT,
+        ok BOOLEAN,
+        resp JSONB,
+        ms INT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS agent_calls_client_idx ON agent_calls (client_id, id DESC);
       CREATE TABLE IF NOT EXISTS agent_sends (
         id SERIAL PRIMARY KEY,
         client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -614,7 +627,20 @@ module.exports = function (ctx) {
     if (rateLimit('agent:' + key, 40, 60 * 1000)) return res.status(429).json({ ok: false, mensaje: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' });
     const row = (await pool.query('SELECT * FROM clients WHERE agent_key=$1', [key])).rows[0];
     if (!row) return res.status(404).json({ ok: false, mensaje: 'No disponible' });
-    const reply = (j) => res.json({ ok: !!j.ok, ...j });
+    const t0 = Date.now();
+    const reply = (j) => {
+      // registro de TODA llamada del agente (envíen o no), para diagnosticar desde el panel
+      try {
+        const q = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+        const asked = [].concat(q.documentos ?? q.documento ?? q.documents ?? q.codigos ?? []).map(String).join(' ; ').slice(0, 300);
+        const short = { mensaje: j.mensaje, enviados: j.enviados, fallidos: j.fallidos, no_encontrados: j.no_encontrados, ambiguos: j.ambiguos, ya_enviados_hace_poco: j.ya_enviados_hace_poco, canal: j.canal, disponibles: Array.isArray(j.disponibles) ? j.disponibles.length : undefined, pendientes: j.pendientes };
+        pool.query('INSERT INTO agent_calls (client_id, contact_id, asked, project, estado, ok, resp, ms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [row.id, String(q.contactId || q.contact_id || '').slice(0, 64), asked, String(q.proyecto || '').slice(0, 120), j.estado || (j.ok ? 'ok' : 'error'), !!j.ok, JSON.stringify(short), Date.now() - t0])
+          .then(() => pool.query('DELETE FROM agent_calls WHERE client_id=$1 AND id < COALESCE((SELECT min(id) FROM (SELECT id FROM agent_calls WHERE client_id=$1 ORDER BY id DESC LIMIT 200) z), 0)', [row.id]))
+          .catch((e) => console.error('[agente] log', e.message));
+      } catch (e) { console.error('[agente] log', e.message); }
+      return res.json({ ok: !!j.ok, ...j });
+    };
     const c = connOf(row);
     if (!c) return reply({ ok: false, estado: 'sin_conexion', mensaje: 'No puedo enviar documentos: este negocio no tiene la conexión con GHL configurada.' });
     const src = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
@@ -660,7 +686,8 @@ module.exports = function (ctx) {
   async function agentInfo(req, id) {
     const key = await ensureAgentKey(id);
     const sends = (await pool.query('SELECT id, contact_id, code, description, channel, status, error, created_at FROM agent_sends WHERE client_id=$1 ORDER BY id DESC LIMIT 30', [id])).rows;
-    return { url: `${publicBase() || baseUrl(req)}/api/agente/${key}/enviar`, sends };
+    const calls = (await pool.query('SELECT id, contact_id, asked, project, estado, ok, resp, ms, created_at FROM agent_calls WHERE client_id=$1 ORDER BY id DESC LIMIT 50', [id])).rows;
+    return { url: `${publicBase() || baseUrl(req)}/api/agente/${key}/enviar`, sends, calls };
   }
   app.post('/api/admin/clients/:id/agent-key', adminAuth, async (req, res) => {
     await pool.query('UPDATE clients SET agent_key=$1 WHERE id=$2', [newKey(), req.params.id]);
