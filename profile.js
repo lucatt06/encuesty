@@ -49,6 +49,7 @@ module.exports = function (ctx) {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS agent_calls_client_idx ON agent_calls (client_id, id DESC);
+      ALTER TABLE agent_calls ADD COLUMN IF NOT EXISTS contact_name TEXT;
       CREATE TABLE IF NOT EXISTS agent_sends (
         id SERIAL PRIMARY KEY,
         client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -61,6 +62,7 @@ module.exports = function (ctx) {
         error TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      ALTER TABLE agent_sends ADD COLUMN IF NOT EXISTS contact_name TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS clients_kb_token_idx ON clients (kb_token) WHERE kb_token IS NOT NULL;
       CREATE TABLE IF NOT EXISTS client_faqs (
         id SERIAL PRIMARY KEY,
@@ -572,6 +574,21 @@ module.exports = function (ctx) {
     const type = SEND_TYPE[kind];
     return type ? { variants: [{ type }], label: CH_NAME[type] || type } : { error: `no pude saber el canal (último mensaje: ${kind || 'desconocido'})` };
   }
+  // Nombre del contacto en GHL (para mostrarlo en el panel en vez del id). '' si no se puede saber.
+  const nameCache = new Map();
+  async function contactNameOf(c, contactId) {
+    const ck = c.loc + ':' + contactId; if (nameCache.has(ck)) return nameCache.get(ck);
+    let name = '';
+    try {
+      const j = await ghlReq(c, 'GET', '/conversations/search', { query: { locationId: c.loc, contactId, limit: 1 } });
+      const v = (j.conversations || [])[0] || {};
+      name = String(v.fullName || v.contactName || [v.firstName, v.lastName].filter(Boolean).join(' ') || '').trim();
+    } catch { /* sin permiso o sin conversación */ }
+    if (!name) {
+      try { const j = await ghlReq(c, 'GET', '/contacts/' + encodeURIComponent(contactId)); const k = j.contact || j; name = String(k.name || [k.firstName, k.lastName].filter(Boolean).join(' ') || '').trim(); } catch { /* el token puede no tener ese permiso */ }
+    }
+    name = name.slice(0, 120); if (name) nameCache.set(ck, name); return name;
+  }
   async function detectChannel(c, contactId, override) {
     const k = String(override || '').toLowerCase().replace(/[\s-]+/g, '_');
     if (CH_ALIAS[k]) return { variants: [{ type: CH_ALIAS[k] }], label: CH_NAME[CH_ALIAS[k]] || CH_ALIAS[k] };
@@ -628,6 +645,7 @@ module.exports = function (ctx) {
     const row = (await pool.query('SELECT * FROM clients WHERE agent_key=$1', [key])).rows[0];
     if (!row) return res.status(404).json({ ok: false, mensaje: 'No disponible' });
     const t0 = Date.now();
+    const contactId0 = (q) => { const v = String(q.contactId || q.contact_id || '').trim(); return /^[A-Za-z0-9_-]{8,64}$/.test(v) ? v : ''; };
     const reply = (j) => {
       // registro de TODA llamada del agente (envíen o no), para diagnosticar desde el panel
       try {
@@ -636,6 +654,7 @@ module.exports = function (ctx) {
         const short = { mensaje: j.mensaje, enviados: j.enviados, fallidos: j.fallidos, no_encontrados: j.no_encontrados, ambiguos: j.ambiguos, ya_enviados_hace_poco: j.ya_enviados_hace_poco, canal: j.canal, disponibles: Array.isArray(j.disponibles) ? j.disponibles.length : undefined, pendientes: j.pendientes };
         pool.query('INSERT INTO agent_calls (client_id, contact_id, asked, project, estado, ok, resp, ms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
           [row.id, String(q.contactId || q.contact_id || '').slice(0, 64), asked, String(q.proyecto || '').slice(0, 120), j.estado || (j.ok ? 'ok' : 'error'), !!j.ok, JSON.stringify(short), Date.now() - t0])
+          .then(() => c && contactId0(q) ? contactNameOf(c, contactId0(q)).then((n) => n && pool.query('UPDATE agent_calls SET contact_name=$1 WHERE client_id=$2 AND contact_id=$3 AND contact_name IS NULL', [n, row.id, contactId0(q)])) : null)
           .then(() => pool.query('DELETE FROM agent_calls WHERE client_id=$1 AND id < COALESCE((SELECT min(id) FROM (SELECT id FROM agent_calls WHERE client_id=$1 ORDER BY id DESC LIMIT 200) z), 0)', [row.id]))
           .catch((e) => console.error('[agente] log', e.message));
       } catch (e) { console.error('[agente] log', e.message); }
@@ -685,8 +704,20 @@ module.exports = function (ctx) {
   // administración de la herramienta
   async function agentInfo(req, id) {
     const key = await ensureAgentKey(id);
-    const sends = (await pool.query('SELECT id, contact_id, code, description, channel, status, error, created_at FROM agent_sends WHERE client_id=$1 ORDER BY id DESC LIMIT 30', [id])).rows;
-    const calls = (await pool.query('SELECT id, contact_id, asked, project, estado, ok, resp, ms, created_at FROM agent_calls WHERE client_id=$1 ORDER BY id DESC LIMIT 50', [id])).rows;
+    const sends = (await pool.query('SELECT id, contact_id, contact_name, code, description, channel, status, error, created_at FROM agent_sends WHERE client_id=$1 ORDER BY id DESC LIMIT 30', [id])).rows;
+    const calls = (await pool.query('SELECT id, contact_id, contact_name, asked, project, estado, ok, resp, ms, created_at FROM agent_calls WHERE client_id=$1 ORDER BY id DESC LIMIT 50', [id])).rows;
+    // completa los nombres que faltan (consulta a GHL una vez por contacto y los guarda)
+    const crow = (await pool.query('SELECT * FROM clients WHERE id=$1', [id])).rows[0], cc = crow && connOf(crow);
+    if (cc) {
+      const need = [...new Set([...sends, ...calls].filter((x) => !x.contact_name && /^[A-Za-z0-9_-]{8,64}$/.test(x.contact_id || '')).map((x) => x.contact_id))].slice(0, 12);
+      await Promise.all(need.map(async (cid) => {
+        const n = await Promise.race([contactNameOf(cc, cid), sleepMs(6000).then(() => '')]);
+        if (!n) return;
+        await pool.query('UPDATE agent_sends SET contact_name=$1 WHERE client_id=$2 AND contact_id=$3', [n, id, cid]);
+        await pool.query('UPDATE agent_calls SET contact_name=$1 WHERE client_id=$2 AND contact_id=$3', [n, id, cid]);
+        for (const x of [...sends, ...calls]) if (x.contact_id === cid) x.contact_name = n;
+      }));
+    }
     return { url: `${publicBase() || baseUrl(req)}/api/agente/${key}/enviar`, sends, calls };
   }
   app.post('/api/admin/clients/:id/agent-key', adminAuth, async (req, res) => {

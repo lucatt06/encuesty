@@ -36,6 +36,8 @@ th{color:var(--muted);font-weight:600}
 .pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}
 .pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
 .pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.ghl-contact{font-weight:700;color:var(--brand);text-decoration:none;background:color-mix(in srgb,var(--brand) 10%,transparent);padding:1px 7px;border-radius:6px}
+.ghl-contact:hover{background:color-mix(in srgb,var(--brand) 20%,transparent);text-decoration:underline}
 .kbsw{display:inline-flex;align-items:center;gap:8px;padding:5px 14px 5px 6px;border-radius:99px;border:1px solid transparent;font-weight:700;font-size:13px;color:#fff;cursor:pointer;transition:background .2s}
 .kbsw.on{background:var(--ok)}.kbsw.off{background:var(--err)}
 .kbsw .dot{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -200,7 +202,7 @@ async function viewClients() {
 }
 async function viewClient(id) {
   const d = await api('/clients/' + id); hdr();
-  const g = d.ghl;
+  const g = d.ghl; curLoc = g.locationId || "";
   $.innerHTML = `<p><a href="#/clientes" style="color:var(--brand)">← Clientes</a></p>
     <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${d.client.company ? esc(d.client.company) + ' · ' : ''}${esc(d.client.email)}</p></div><div class="row"><a class="btn sm" href="/api/admin/clients/${id}/ver-empresa" target="_blank" rel="noopener" title="Abre Mi empresa como la ve este cliente; lo que edites queda guardado en su perfil">Ver empresa</a>${ghlPill({ connected: g.connected, kb_error: g.error })}<button class="sm" onclick="renameClient(${id},'${esc(d.client.company || '').replace(/'/g, '')}')">Editar nombre y empresa</button><button class="danger sm" onclick="delClient(${id},'${esc(d.client.name).replace(/'/g, '')}')">Eliminar cliente</button></div></div>
     <div class="card"><h2>Conexión con la subcuenta de GHL</h2>
@@ -230,14 +232,14 @@ async function viewClient(id) {
       <div id="permres" style="margin-top:10px"></div>
       <div class="spread" style="margin-top:18px"><h2 style="margin:0">Llamadas recientes del agente (${d.agent.calls.length})</h2><button class="sm" onclick="viewClient(${id})">Actualizar</button></div>
       <p class="muted" style="margin:4px 0 8px">Cada vez que el agente usa la herramienta queda aquí, envíe o no. Muestra lo que pidió y lo que Encuesty le respondió.</p>
-      ${d.agent.calls.length ? '<div style="overflow:auto"><table><tr><th>Fecha</th><th>Contacto</th><th>Lo que pidió</th><th>Qué respondió Encuesty</th><th>ms</th></tr>' + d.agent.calls.map(x => {
+      ${d.agent.calls.length ? '<div style="overflow:auto"><table><tr><th>Fecha</th><th>Cliente (contacto)</th><th>Lo que pidió</th><th>Qué respondió Encuesty</th><th>ms</th></tr>' + d.agent.calls.map(x => {
         const r = x.resp || {}, l = a => (a || []).map(esc).join('; ');
         const det = [r.enviados && r.enviados.length ? 'Enviados: ' + l(r.enviados) : '', r.fallidos && r.fallidos.length ? 'Fallidos: ' + l(r.fallidos) : '', r.no_encontrados && r.no_encontrados.length ? 'No encontró: ' + l(r.no_encontrados) : '', r.ambiguos && r.ambiguos.length ? 'Ambiguos: ' + l(r.ambiguos.map(z => typeof z === 'string' ? z : (z.pedido + (z.opciones ? ' (¿' + z.opciones.join(' / ') + '?)' : '')))) : '', r.disponibles ? 'Le ofreció ' + r.disponibles + ' documento(s) disponibles' : '', r.canal ? 'Canal: ' + esc(r.canal) : ''].filter(Boolean).join('<br>');
         const cls = ['enviado', 'enviando', 'parcial', 'ya_enviado'].includes(x.estado) ? 'ok' : x.estado === 'error' || x.estado === 'sin_conexion' ? 'warn' : 'off';
-        return `<tr><td>${esc(fmt(x.created_at))}</td><td><code>${esc(x.contact_id || '—')}</code></td><td>${esc(x.asked || '—')}${x.project ? `<div class="muted">Proyecto: ${esc(x.project)}</div>` : ''}</td><td><span class="pill ${cls}">${esc(x.estado)}</span>${r.mensaje ? `<div style="font-size:12px;margin-top:4px">${esc(r.mensaje)}</div>` : ''}${det ? `<div class="muted" style="font-size:12px;margin-top:2px">${det}</div>` : ''}</td><td>${x.ms ?? ''}</td></tr>`;
+        return `<tr><td>${esc(fmt(x.created_at))}</td><td>${who(x)}</td><td>${esc(x.asked || '—')}${x.project ? `<div class="muted">Proyecto: ${esc(x.project)}</div>` : ''}</td><td><span class="pill ${cls}">${esc(x.estado)}</span>${r.mensaje ? `<div style="font-size:12px;margin-top:4px">${esc(r.mensaje)}</div>` : ''}${det ? `<div class="muted" style="font-size:12px;margin-top:2px">${det}</div>` : ''}</td><td>${x.ms ?? ''}</td></tr>`;
       }).join('') + '</table></div>' : '<p class="muted">Todavía el agente no ha usado la herramienta.</p>'}
       <h2 style="margin-top:18px">Envíos recientes (${d.agent.sends.length})</h2>
-      ${d.agent.sends.length ? '<div style="overflow:auto"><table><tr><th>Fecha</th><th>Contacto</th><th>Documento</th><th>Canal</th><th>Estado</th></tr>' + d.agent.sends.map(x => `<tr><td>${esc(fmt(x.created_at))}</td><td><code>${esc(x.contact_id)}</code></td><td>${esc(x.code)} · ${esc(x.description)}</td><td>${esc(x.channel)}</td><td><span class="pill ${x.status === 'enviado' ? 'ok' : x.status === 'error' ? 'warn' : 'off'}">${esc(x.status)}</span>${x.error ? `<div class="err" style="font-size:12px">${esc(x.error)}</div>` : ''}</td></tr>`).join('') + '</table></div>' : '<p class="muted">Aún no se ha enviado ningún documento.</p>'}</div>
+      ${d.agent.sends.length ? '<div style="overflow:auto"><table><tr><th>Fecha</th><th>Cliente (contacto)</th><th>Documento</th><th>Canal</th><th>Estado</th></tr>' + d.agent.sends.map(x => `<tr><td>${esc(fmt(x.created_at))}</td><td>${who(x)}</td><td>${esc(x.code)} · ${esc(x.description)}</td><td>${esc(x.channel)}</td><td><span class="pill ${x.status === 'enviado' ? 'ok' : x.status === 'error' ? 'warn' : 'off'}">${esc(x.status)}</span>${x.error ? `<div class="err" style="font-size:12px">${esc(x.error)}</div>` : ''}</td></tr>`).join('') + '</table></div>' : '<p class="muted">Aún no se ha enviado ningún documento.</p>'}</div>
     <div class="card"><h2>Proyectos (${d.projects.length})</h2>${d.projects.length ? d.projects.map(p => `<div style="margin:10px 0 14px"><div class="muted" style="font-size:12px">Origen: ${esc(p.origin)}</div><div style="white-space:pre-wrap">${esc(p.text)}</div></div>`).join('') : '<p class="muted">Sin proyectos todavía.</p>'}</div>
     <div class="card"><h2>Preguntas y respuestas (${d.faqs.length})</h2>${d.faqs.length ? d.faqs.map(f => `<div class="ans"><div class="l">${esc(f.question)} <span class="pill ${f.state === 'synced' ? 'ok' : f.state === 'local' ? 'off' : 'warn'}">${{ synced: 'En GHL', pending: 'Pendiente', error: 'Error', local: 'Solo en Encuesty' }[f.state] || esc(f.state)}</span></div><div class="a">${esc(f.answer)}</div>${f.error ? `<div class="err">${esc(f.error)}</div>` : ''}</div>`).join('') : '<p class="muted">Sin preguntas todavía.</p>'}</div>`;
 }
@@ -286,6 +288,15 @@ async function checkPerms(id, btn) {
 }
 async function regenKey(id) { if (confirm('¿Regenerar la clave? La dirección actual dejará de funcionar y tendrás que pegar la nueva en el agente de GHL.')) { await api('/clients/' + id + '/agent-key', { method: 'POST' }); viewClient(id); } }
 async function editDocDesc(fid, cid, cur) { const n = prompt('¿Qué archivo es este? (descripción específica, máx. 150 caracteres)', cur || ''); if (n !== null && n.trim() !== (cur || '')) { await api('/files/' + fid + '/description', { method: 'PUT', body: JSON.stringify({ description: n.trim() }) }); viewClient(cid); } }
+let curLoc = '';
+const who = x => {
+  const id = esc(x.contact_id || '');
+  if (!x.contact_id) return '<code>—</code>';
+  const url = curLoc ? `https://app.gohighlevel.com/v2/location/${encodeURIComponent(curLoc)}/contacts/detail/${encodeURIComponent(x.contact_id)}` : '';
+  const label = x.contact_name ? esc(x.contact_name) : id;
+  const main = url ? `<a class="ghl-contact" href="${url}" target="_blank" rel="noopener" title="Abrir este contacto en GHL (otra pestaña)">${label} ↗</a>` : `<b>${label}</b>`;
+  return main + (x.contact_name ? `<div class="muted" style="font-size:11px" title="ID del contacto en GHL"><code>${id}</code></div>` : '');
+};
 async function toggleKbDocs(id, btn) {
   const on = !btn.classList.contains('on'); btn.disabled = true;
   try {
