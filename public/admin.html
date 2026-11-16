@@ -36,6 +36,11 @@ th{color:var(--muted);font-weight:600}
 .pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600}
 .pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
 .pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.kbsw{display:inline-flex;align-items:center;gap:8px;padding:5px 14px 5px 6px;border-radius:99px;border:1px solid transparent;font-weight:700;font-size:13px;color:#fff;cursor:pointer;transition:background .2s}
+.kbsw.on{background:var(--ok)}.kbsw.off{background:var(--err)}
+.kbsw .dot{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.kbsw.off{flex-direction:row}.kbsw.on{flex-direction:row-reverse;padding:5px 6px 5px 14px}
+.kbsw:disabled{opacity:.6;cursor:wait}
 .pill.off{background:var(--line);color:var(--muted)}
 .link{font-family:ui-monospace,monospace;font-size:13px;background:var(--cream);padding:3px 8px;border-radius:6px;word-break:break-all}
 .err{color:var(--err);font-size:14px}
@@ -209,9 +214,10 @@ async function viewClient(id) {
     <div class="card"><h2>Página de proyectos para el Web crawler</h2>
       <p class="muted" style="margin:0 0 8px">Esta es la página de texto con todos los proyectos del cliente. Se registra sola en el Web crawler de su base de conocimientos y se vuelve a leer cuando el cliente cambia algo.</p>
       <div class="row"><input type="text" readonly value="${esc(d.kbUrl)}" onclick="this.select()" style="flex:1;min-width:260px"><button onclick="copy('${esc(d.kbUrl)}',this)">Copiar</button><a class="btn" href="${esc(d.kbUrl)}" target="_blank" rel="noopener">Abrir</a></div></div>
-    <div class="card"><h2>Documentos de los proyectos (${d.docs.length})</h2>
-      <p class="muted" style="margin:0 0 10px">Archivos que el cliente subió, con la descripción que les puso. Cada uno tiene un código que usará la herramienta de envío del agente.</p>
-      <label class="row" style="margin-bottom:10px"><input type="checkbox" ${g.kbDocs ? 'checked' : ''} onchange="toggleKbDocs(${id}, this.checked)"> <span>Incluir esta lista en la base de conocimientos del agente <span class="muted">(actívalo solo cuando la herramienta de envío ya esté configurada en su agente, para que no ofrezca documentos que no puede enviar)</span></span></label>
+    <div class="card"><div class="spread" style="align-items:flex-start"><h2 style="margin:0">Documentos de los proyectos (${d.docs.length})</h2>
+      <button type="button" id="kbsw" class="kbsw ${g.kbDocs ? 'on' : 'off'}" role="switch" aria-checked="${!!g.kbDocs}" onclick="toggleKbDocs(${id}, this)" title="Incluir esta lista de documentos en la base de conocimientos del agente"><span class="dot"></span><span class="lbl">${g.kbDocs ? 'Activo' : 'Inactivo'}</span></button></div>
+      <p class="muted" style="margin:6px 0 10px">Archivos que el cliente subió, con la descripción que les puso. Cada uno tiene un código que usará la herramienta de envío del agente.</p>
+      <p class="muted" style="margin:0 0 10px"><b>Activo</b> = el agente de este cliente conoce esta lista de documentos y los ofrece. Actívalo solo cuando la herramienta de envío ya esté configurada en su agente, para que no ofrezca documentos que no puede enviar.</p>
       ${d.docs.length ? d.docs.map(f => `<div class="ans"><div class="l">${esc(f.code)} · ${f.description ? esc(f.description) : '<span style="color:var(--warn)">⚠ falta descripción</span>'}</div><div class="a muted" style="font-size:13px">${esc(f.project)} · ${esc(f.filename)} (${f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB'}) · <a href="/api/admin/files/${f.id}">Descargar</a> · <a href="#" onclick="editDocDesc(${f.id}, ${id}, this.dataset.d); return false" data-d="${esc(f.description)}">Editar descripción</a></div></div>`).join('') : '<p class="muted">Todavía no hay documentos.</p>'}</div>
     <div class="card"><h2>Herramienta de envío para el agente</h2>
       <p class="muted" style="margin:0 0 10px">Permite que el agente de IA de este cliente envíe documentos (brochure, planos…) por el mismo chat donde habla con el cliente. Se configura en GHL como un <b>Custom API</b>: copia estos valores. No necesita autenticación: la clave secreta va dentro de la dirección.</p>
@@ -272,7 +278,14 @@ async function checkPerms(id, btn) {
 }
 async function regenKey(id) { if (confirm('¿Regenerar la clave? La dirección actual dejará de funcionar y tendrás que pegar la nueva en el agente de GHL.')) { await api('/clients/' + id + '/agent-key', { method: 'POST' }); viewClient(id); } }
 async function editDocDesc(fid, cid, cur) { const n = prompt('¿Qué archivo es este? (descripción específica, máx. 150 caracteres)', cur || ''); if (n !== null && n.trim() !== (cur || '')) { await api('/files/' + fid + '/description', { method: 'PUT', body: JSON.stringify({ description: n.trim() }) }); viewClient(cid); } }
-async function toggleKbDocs(id, on) { await api('/clients/' + id + '/kbdocs', { method: 'PUT', body: JSON.stringify({ enabled: on }) }); }
+async function toggleKbDocs(id, btn) {
+  const on = !btn.classList.contains('on'); btn.disabled = true;
+  try {
+    await api('/clients/' + id + '/kbdocs', { method: 'PUT', body: JSON.stringify({ enabled: on }) });
+    btn.classList.toggle('on', on); btn.classList.toggle('off', !on); btn.setAttribute('aria-checked', String(on)); btn.querySelector('.lbl').textContent = on ? 'Activo' : 'Inactivo';
+  } catch (e) { alert('No se pudo cambiar: ' + (e.message || 'error')); }
+  btn.disabled = false;
+}
 async function syncNow(id, btn) {
   btn.disabled = true; const msg = document.getElementById('gmsg'); msg.innerHTML = '<span class="muted">Sincronizando…</span>';
   try { const r = await api('/clients/' + id + '/sync', { method: 'POST' }); msg.innerHTML = r.ok ? '<div style="color:var(--ok);font-weight:600">✓ Sincronizado.</div>' : `<div class="err">${esc(r.skipped || (r.errors || []).join(' | ') || 'No se pudo sincronizar')}</div>`; }
