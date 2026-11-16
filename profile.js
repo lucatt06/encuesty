@@ -351,6 +351,13 @@ module.exports = function (ctx) {
       res.json({ ok: true, name: c.name });
     } catch (e) { console.error(e); res.status(500).json({ error: 'Error del servidor.' }); }
   });
+  // El admin entra a "Mi empresa" como ese cliente (en otra pestaña) para ver y editar lo mismo que el cliente.
+  app.get('/api/admin/clients/:id/ver-empresa', adminAuth, async (req, res) => {
+    const r = await pool.query('SELECT id FROM clients WHERE id=$1', [req.params.id]);
+    if (!r.rowCount) return res.status(404).type('text/plain').send('No existe');
+    setCookie(res, 'enc_perfil', makeToken({ c: r.rows[0].id, adm: 1 }), 1);
+    res.redirect('/perfil');
+  });
   app.post('/api/perfil/logout', (req, res) => { setCookie(res, 'enc_perfil', '', 0); res.json({ ok: true }); });
   const faqRow = (f) => ({ id: f.id, question: f.question, answer: f.answer, state: f.sync_state });
   app.get('/api/perfil/me', perfilAuth, async (req, res) => {
@@ -358,7 +365,7 @@ module.exports = function (ctx) {
     const surveys = (await pool.query(`SELECT s.slug, s.title, r.status, r.completed_at FROM responses r JOIN surveys s ON s.id=r.survey_id
       WHERE r.client_id=$1 AND left(s.slug,2)<>'__' AND s.published ORDER BY r.started_at`, [c.id])).rows;
     const faqs = (await pool.query("SELECT * FROM client_faqs WHERE client_id=$1 AND sync_state<>'delete' ORDER BY id", [c.id])).rows.map(faqRow);
-    res.json({ name: c.name, company: c.company || '', email: c.email, surveys, faqs, faqMax: FAQ_MAX,
+    res.json({ admin: !!(readToken(cookies(req).enc_perfil) || {}).adm, name: c.name, company: c.company || '', email: c.email, surveys, faqs, faqMax: FAQ_MAX,
       connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, syncError: !!c.kb_error, pendingSync: !!c.kb_dirty_at });
   });
   function faqInput(body) {

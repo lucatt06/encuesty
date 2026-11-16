@@ -103,7 +103,7 @@ function banner() {
   return `<div class="banner">🤖 <span>Tu agente de IA está conectado. Lo que cambies aquí se actualiza solo${me.syncedAt ? ' · última actualización: ' + esc(fmt(me.syncedAt)) : ''}.</span></div>`;
 }
 function render() {
-  $.innerHTML = `<h1>Hola, ${esc(me.name)}</h1><div class="muted">${me.company ? esc(me.company) + ' · ' : ''}${esc(me.email)}</div>${banner()}
+  $.innerHTML = `${me.admin ? '<div class="banner warn">👁️ <span>Estás viendo esta empresa como administrador. Lo que cambies aquí se guarda en el perfil del cliente.</span></div>' : ''}<h1>Hola, ${esc(me.name)}</h1><div class="muted">${me.company ? esc(me.company) + ' · ' : ''}${esc(me.email)}</div>${banner()}
     <div class="tabs">
       ${[['proyectos', 'Proyectos'], ['faqs', 'Preguntas y respuestas'], ['cuestionarios', 'Mis cuestionarios']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
     </div><div class="card" id="panel"></div>`;
