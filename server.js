@@ -287,6 +287,25 @@ app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (r
   await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [rid]);
   res.json({ ok: true, file: req.virtual ? { ...rows[0], question_id: req.params.qid } : rows[0] });
 });
+// Ver un archivo propio dentro de la página (imagen, PDF o video); cualquier otro tipo se descarga.
+app.get('/api/s/:slug/file/:id/ver', clientAuth, async (req, res) => {
+  const { rows } = req.virtual
+    ? await pool.query('SELECT * FROM files WHERE id=$1 AND response_id IN (SELECT id FROM responses WHERE client_id=$2)', [req.params.id, req.client.id])
+    : await pool.query('SELECT * FROM files WHERE id=$1 AND response_id=$2', [req.params.id, req.resp.id]);
+  const f = rows[0]; if (!f) return res.status(404).end();
+  const inlineOk = /^(image\/(png|jpe?g|gif|webp)|application\/pdf|video\/(mp4|quicktime|3gpp))$/i.test(f.mime || '');
+  res.set('Cache-Control', 'private, no-store'); res.set('X-Content-Type-Options', 'nosniff');
+  if (!inlineOk) return sendStoredFile(res, f);
+  if (f.s3_key) {
+    const url = await S3.getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: f.s3_key,
+      ResponseContentType: f.mime, ResponseContentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(f.filename)}` }), { expiresIn: 300 });
+    return res.redirect(url);
+  }
+  res.set('Content-Security-Policy', 'sandbox');
+  res.setHeader('Content-Type', f.mime);
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(f.filename)}`);
+  res.send(f.data);
+});
 app.put('/api/s/:slug/file/:id', clientAuth, async (req, res) => {
   const d = String(req.body.description ?? '').trim().slice(0, 150);
   const r = req.virtual

@@ -162,6 +162,18 @@ body.embed{background:transparent}
 .doc-row{border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin:6px 0;background:#fff}
 .doc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
 .doc-name{word-break:break-all}
+.fv-link{background:none;border:0;padding:0;font:inherit;color:var(--brand,#e93b74);text-decoration:underline;cursor:pointer;text-align:left;word-break:break-all}
+.fv-link:hover{opacity:.8}
+.fv-back{position:fixed;inset:0;z-index:1000;background:rgba(14,23,66,.82);display:flex;align-items:center;justify-content:center;padding:16px}
+.fv-box{background:#fff;border-radius:14px;max-width:min(1100px,100%);width:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.fv-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid #e4e2da;font-weight:600;font-size:14px}
+.fv-head span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fv-x{flex:none;width:34px;height:34px;min-width:34px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid #d9d6cc;background:#fff;font-size:20px;line-height:1;cursor:pointer;color:#0e1742}
+.fv-x:hover{background:#f4f1e9}
+.fv-body{flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;background:#f4f1e9;overflow:auto}
+.fv-body img,.fv-body video{max-width:100%;max-height:78vh;display:block}
+.fv-body iframe{width:100%;height:78vh;border:0;background:#fff}
+.fv-msg{padding:30px;text-align:center}
 .doc-desc{margin-top:6px}
 .pj-card .doc-desc.need{border-color:var(--warn)}
 .pj-card .doc-desc.bad{border-color:var(--err);background:#fff6f6}
@@ -415,10 +427,29 @@ function docWarn(f) {
   const lim = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? [5, 'una imagen'] : ['mp4', 'mov', '3gp'].includes(ext) ? [16, 'un video'] : [100, 'un documento'];
   return mb > lim[0] ? `⚠ Pesa ${mb.toFixed(1)} MB. WhatsApp admite aprox. ${lim[0]} MB por ${lim[1]}; podría no enviarse. Considera comprimirlo.` : '';
 }
-const docRow = f => `<div class="doc-row" data-fid="${f.id}"><div class="doc-top"><span class="doc-name">📎 ${esc(f.filename)} <span class="muted">(${sizeTxt(Number(f.size))})</span></span><button type="button" class="pj-x" data-delfile="${f.id}">Quitar</button></div>
+const fvLink = f => `<button type="button" class="fv-link" data-viewfile="${f.id}" data-fname="${esc(f.filename)}" title="Ver archivo">${esc(f.filename)}</button>`;
+const docRow = f => `<div class="doc-row" data-fid="${f.id}"><div class="doc-top"><span class="doc-name">📎 ${fvLink(f)} <span class="muted">(${sizeTxt(Number(f.size))})</span></span><button type="button" class="pj-x" data-delfile="${f.id}">Quitar</button></div>
   <input type="text" class="doc-desc ${String(f.description || '').trim() ? '' : 'need'}" data-desc="${f.id}" maxlength="150" value="${esc(f.description)}" placeholder="¿Qué archivo es este? Sé específico. Ej: Plano apartamento de 1 habitación" aria-label="Descripción del archivo">
   ${docWarn(f) ? `<div class="doc-warn">${esc(docWarn(f))}</div>` : ''}</div>`;
 const descTimers = {};
+/* visor de archivos dentro de la página */
+function closeViewer() { document.getElementById('fv')?.remove(); document.removeEventListener('keydown', fvKey); }
+function fvKey(e) { if (e.key === 'Escape') closeViewer(); }
+function openViewer(id, name) {
+  closeViewer();
+  const ext = (String(name).split('.').pop() || '').toLowerCase(), src = `/api/s/${encodeURIComponent(slug)}/file/${id}/ver`;
+  let inner;
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) inner = `<img src="${src}" alt="${esc(name)}">`;
+  else if (ext === 'pdf') inner = `<iframe src="${src}" title="${esc(name)}"></iframe>`;
+  else if (['mp4', 'mov', '3gp'].includes(ext)) inner = `<video src="${src}" controls playsinline></video>`;
+  else inner = `<div class="fv-msg"><p>Este tipo de archivo no se puede mostrar aquí.</p><p><a class="btn" href="${src}" download>Descargar ${esc(name)}</a></p></div>`;
+  const d = document.createElement('div'); d.id = 'fv'; d.className = 'fv-back'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+  d.innerHTML = `<div class="fv-box"><div class="fv-head"><span>${esc(name)}</span><button type="button" class="fv-x" aria-label="Cerrar" title="Cerrar (Esc)">✕</button></div><div class="fv-body">${inner}</div></div>`;
+  d.onclick = e => { if (e.target === d) closeViewer(); };
+  d.querySelector('.fv-x').onclick = closeViewer;
+  document.body.appendChild(d); document.addEventListener('keydown', fvKey); d.querySelector('.fv-x').focus();
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-viewfile]'); if (b) openViewer(b.dataset.viewfile, b.dataset.fname); });
 function descInput(t) {
   const fid = t.dataset.desc, f = state.files.find(x => String(x.id) === fid), v = t.value;
   if (f) f.description = v;
@@ -429,7 +460,7 @@ function descInput(t) {
     catch { setSaved('⚠ No se pudo guardar la descripción'); }
   }, 600);
 }
-const fileRow = f => `<div class="file-item"><span>📎 ${esc(f.filename)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
+const fileRow = f => `<div class="file-item"><span>📎 ${fvLink(f)} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></span><button type="button" data-delfile="${f.id}">Quitar</button></div>`;
 
 function bind() {
   bindProjects();
