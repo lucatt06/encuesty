@@ -25,6 +25,7 @@ module.exports = function (ctx) {
   let profileSurveyId = null;
   async function init() {
     await pool.query(`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS company TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS ghl_token_enc TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS ghl_location_id TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS ghl_kb_id TEXT;
@@ -185,6 +186,7 @@ module.exports = function (ctx) {
   /* ---------- texto de los proyectos (para el web crawler de GHL y el panel) ---------- */
   const nl = (s) => esc(s).replace(/\n/g, '<br>');
   async function kbHtml(client) {
+    const co = T(client.company) || client.name;
     const projs = (await clientProjects(client.id)).filter((x) => !isBlank(x.project));
     const docsByKey = new Map();
     if (client.kb_docs) {
@@ -210,8 +212,8 @@ module.exports = function (ctx) {
         + (docs.length ? line(docs.length > 1 ? 'Documentos que se pueden enviar al cliente' : 'Documento que se puede enviar al cliente', docs.map((d) => `DOC-${d.id} (${esc(T(d.description))})`).join('; ')) : '')
         + '</section>';
     }).join('\n');
-    return `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<title>Proyectos de ${esc(client.name)}</title>\n</head>\n<body>\n<h1>Proyectos de ${esc(client.name)}</h1>\n`
-      + (projs.length ? `<p>Información de los proyectos inmobiliarios de ${esc(client.name)}. Total de proyectos: ${projs.length}.</p>\n${body}\n` : `<p>${esc(client.name)} aún no ha registrado proyectos.</p>\n`)
+    return `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<title>Proyectos de ${esc(co)}</title>\n</head>\n<body>\n<h1>Proyectos de ${esc(co)}</h1>\n`
+      + (projs.length ? `<p>Información de los proyectos inmobiliarios de ${esc(co)}. Total de proyectos: ${projs.length}.</p>\n${body}\n` : `<p>${esc(co)} aún no ha registrado proyectos.</p>\n`)
       + '</body>\n</html>\n';
   }
   function projectText(p, n) {
@@ -222,7 +224,7 @@ module.exports = function (ctx) {
   app.get('/kb/:token', async (req, res) => {
     const t = req.params.token;
     if (!/^[A-Za-z0-9_-]{20,64}$/.test(t)) return res.status(404).type('text/plain').send('No disponible');
-    const c = (await pool.query('SELECT id, name, kb_docs FROM clients WHERE kb_token=$1', [t])).rows[0];
+    const c = (await pool.query('SELECT id, name, company, kb_docs FROM clients WHERE kb_token=$1', [t])).rows[0];
     if (!c) return res.status(404).type('text/plain').send('No disponible');
     res.set('Cache-Control', 'no-cache');
     res.type('html').send(await kbHtml(c));
@@ -334,16 +336,16 @@ module.exports = function (ctx) {
     if (!c) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
     req.client = c; next();
   }
-  app.get('/perfil', (req, res) => res.sendFile(path.join(PUB, 'perfil.html')));
+  app.get(['/perfil', '/mi-empresa'], (req, res) => res.sendFile(path.join(PUB, 'perfil.html')));
   app.post('/api/perfil/start', async (req, res) => {
     try {
       if (rateLimit('pstart:' + req.ip, 30, 10 * 60 * 1000)) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos.' });
-      const email = String(req.body.email || '').trim().toLowerCase(), name = String(req.body.name || '').trim();
+      const email = String(req.body.email || '').trim().toLowerCase(), name = String(req.body.name || '').trim(), company = String(req.body.company || '').trim();
       if (!validEmail(email)) return res.status(400).json({ error: 'Escribe un correo válido.' });
       let c = (await pool.query('SELECT * FROM clients WHERE email=$1', [email])).rows[0];
       if (!c) {
-        if (!name) return res.json({ needName: true });
-        c = (await pool.query('INSERT INTO clients (email,name) VALUES ($1,$2) RETURNING *', [email, name.slice(0, 120)])).rows[0];
+        if (!name || !company) return res.json({ needName: true });
+        c = (await pool.query('INSERT INTO clients (email,name,company) VALUES ($1,$2,$3) RETURNING *', [email, name.slice(0, 120), company.slice(0, 120)])).rows[0];
       }
       setCookie(res, 'enc_perfil', makeToken({ c: c.id }), 90);
       res.json({ ok: true, name: c.name });
@@ -356,7 +358,7 @@ module.exports = function (ctx) {
     const surveys = (await pool.query(`SELECT s.slug, s.title, r.status, r.completed_at FROM responses r JOIN surveys s ON s.id=r.survey_id
       WHERE r.client_id=$1 AND left(s.slug,2)<>'__' AND s.published ORDER BY r.started_at`, [c.id])).rows;
     const faqs = (await pool.query("SELECT * FROM client_faqs WHERE client_id=$1 AND sync_state<>'delete' ORDER BY id", [c.id])).rows.map(faqRow);
-    res.json({ name: c.name, email: c.email, surveys, faqs, faqMax: FAQ_MAX,
+    res.json({ name: c.name, company: c.company || '', email: c.email, surveys, faqs, faqMax: FAQ_MAX,
       connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, syncError: !!c.kb_error, pendingSync: !!c.kb_dirty_at });
   });
   function faqInput(body) {
@@ -394,7 +396,7 @@ module.exports = function (ctx) {
   /* ---------- panel de administración: clientes y conexión con GHL ---------- */
   app.get('/api/admin/clients', adminAuth, async (req, res) => {
     setBase(baseUrl(req));
-    const { rows } = await pool.query(`SELECT c.id, c.name, c.email, c.created_at, (c.ghl_token_enc IS NOT NULL AND c.ghl_kb_id IS NOT NULL) AS connected,
+    const { rows } = await pool.query(`SELECT c.id, c.name, c.company, c.email, c.created_at, (c.ghl_token_enc IS NOT NULL AND c.ghl_kb_id IS NOT NULL) AS connected,
       c.kb_synced_at, c.kb_error, c.kb_dirty_at,
       (SELECT count(*)::int FROM responses r JOIN surveys s ON s.id=r.survey_id WHERE r.client_id=c.id AND left(s.slug,2)<>'__') AS surveys,
       (SELECT count(*)::int FROM client_faqs f WHERE f.client_id=c.id AND f.sync_state<>'delete') AS faqs
@@ -413,7 +415,7 @@ module.exports = function (ctx) {
       WHERE r.client_id=$1 AND f.question_id LIKE '%#%' ORDER BY f.id`, [id])).rows.filter((f) => keyToProj.has(f.question_id));
     const faqs = (await pool.query("SELECT * FROM client_faqs WHERE client_id=$1 AND sync_state<>'delete' ORDER BY id", [id])).rows;
     return {
-      client: { id: c.id, name: c.name, email: c.email },
+      client: { id: c.id, name: c.name, company: c.company || '', email: c.email },
       ghl: { hasToken: !!c.ghl_token_enc, locationId: c.ghl_location_id || '', kbId: c.ghl_kb_id || '', connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, error: c.kb_error, dirty: !!c.kb_dirty_at, kbDocs: !!c.kb_docs },
       docs: docRows.map((f) => ({ id: f.id, code: `DOC-${f.id}`, filename: f.filename, size: Number(f.size), description: f.description || '', project: keyToProj.get(f.question_id) })),
       kbUrl: `${publicBase()}/kb/${token}`,
@@ -468,7 +470,8 @@ module.exports = function (ctx) {
   app.put('/api/admin/clients/:id', adminAuth, async (req, res) => {
     const name = String(req.body.name || '').trim().slice(0, 120);
     if (!name) return res.status(400).json({ error: 'Escribe un nombre.' });
-    const r = await pool.query('UPDATE clients SET name=$1 WHERE id=$2 RETURNING id', [name, req.params.id]);
+    const company = req.body.company === undefined ? null : String(req.body.company || '').trim().slice(0, 120);
+    const r = await pool.query('UPDATE clients SET name=$1, company=CASE WHEN $3::boolean THEN $4 ELSE company END WHERE id=$2 RETURNING id', [name, req.params.id, company !== null, company || null]);
     if (!r.rowCount) return res.status(404).json({ error: 'No existe' });
     markKbDirty(Number(req.params.id)).catch(() => {});
     res.json({ ok: true, name });

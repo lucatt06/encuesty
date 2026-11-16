@@ -83,7 +83,8 @@ function hdr() { document.getElementById('hdr').innerHTML = '<a class="btn" href
 async function viewList() {
   const { surveys, baseUrl } = await api('/surveys'); hdr();
   $.innerHTML = `<div class="spread"><div><h1>Cuestionarios</h1><p class="muted">Cada cuestionario tiene su propio enlace para enviar a tus clientes.</p></div>
-    <button class="primary" onclick="newSurvey()">+ Nuevo cuestionario</button></div>
+    <div class="row"><button onclick="copy('${esc(baseUrl)}/mi-empresa',this)" title="Para tus clientes existentes: entran con su correo, su nombre y su empresa y llenan sus proyectos y preguntas frecuentes">Compartir enlace de Mi empresa</button>
+    <button class="primary" onclick="newSurvey()">+ Nuevo cuestionario</button></div></div>
     ${surveys.map(s => `<div class="card"><div class="spread"><div>
       <h2>${esc(s.title)} <span class="pill ${s.published ? 'ok' : 'off'}">${s.published ? 'Activo' : 'Pausado'}</span></h2>
       <div class="row"><span class="link">${esc(baseUrl)}/s/${esc(s.slug)}</span> <button class="sm" onclick="copy('${esc(baseUrl)}/s/${esc(s.slug)}',this)">Copiar enlace</button></div>
@@ -190,13 +191,13 @@ async function viewClients() {
   const { clients } = await api('/clients'); hdr();
   $.innerHTML = `<h1>Clientes</h1><p class="muted">Cada cliente tiene su perfil, sus proyectos y sus preguntas y respuestas. Aquí conectas la subcuenta de GHL de cada uno para alimentar a su agente de IA.</p>
     <div class="card" style="overflow:auto"><table><tr><th>Cliente</th><th>Correo</th><th>Cuestionarios</th><th>Proyectos</th><th>Preguntas</th><th>GHL</th><th>Última sincronización</th><th></th></tr>
-    ${clients.map(c => `<tr><td>${esc(c.name)}</td><td>${esc(c.email)}</td><td>${c.surveys}</td><td>${c.projects}</td><td>${c.faqs}</td><td>${ghlPill(c)}</td><td>${c.connected ? fmt(c.kb_synced_at) : '—'}</td><td><a class="btn sm" href="#/cliente/${c.id}">Abrir</a></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Todavía no hay clientes.</td></tr>'}</table></div>`;
+    ${clients.map(c => `<tr><td>${esc(c.name)}${c.company ? `<br><span class="muted">${esc(c.company)}</span>` : ''}</td><td>${esc(c.email)}</td><td>${c.surveys}</td><td>${c.projects}</td><td>${c.faqs}</td><td>${ghlPill(c)}</td><td>${c.connected ? fmt(c.kb_synced_at) : '—'}</td><td><a class="btn sm" href="#/cliente/${c.id}">Abrir</a></td></tr>`).join('') || '<tr><td colspan="8" class="muted">Todavía no hay clientes.</td></tr>'}</table></div>`;
 }
 async function viewClient(id) {
   const d = await api('/clients/' + id); hdr();
   const g = d.ghl;
   $.innerHTML = `<p><a href="#/clientes" style="color:var(--brand)">← Clientes</a></p>
-    <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${esc(d.client.email)}</p></div><div class="row">${ghlPill({ connected: g.connected, kb_error: g.error })}<button class="sm" onclick="renameClient(${id})">Editar nombre</button><button class="danger sm" onclick="delClient(${id},'${esc(d.client.name).replace(/'/g, '')}')">Eliminar cliente</button></div></div>
+    <div class="spread"><div><h1>${esc(d.client.name)}</h1><p class="muted">${d.client.company ? esc(d.client.company) + ' · ' : ''}${esc(d.client.email)}</p></div><div class="row">${ghlPill({ connected: g.connected, kb_error: g.error })}<button class="sm" onclick="renameClient(${id},'${esc(d.client.company || '').replace(/'/g, '')}')">Editar nombre y empresa</button><button class="danger sm" onclick="delClient(${id},'${esc(d.client.name).replace(/'/g, '')}')">Eliminar cliente</button></div></div>
     <div class="card"><h2>Conexión con la subcuenta de GHL</h2>
       <p class="muted" style="margin:0 0 10px">Pega el token de API (Private Integration) y el Location ID de la subcuenta de este cliente. Necesita permisos de <b>knowledge-bases</b> (lectura y escritura). El token se guarda cifrado y no se vuelve a mostrar.</p>
       <div class="row"><div style="flex:2;min-width:240px"><label class="s">Token de API</label><input type="password" id="gtok" autocomplete="off" placeholder="${g.hasToken ? '•••••••• guardado (déjalo vacío para conservarlo)' : 'pega aquí el token'}"></div>
@@ -278,10 +279,14 @@ async function syncNow(id, btn) {
   catch (e) { msg.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   btn.disabled = false;
 }
-async function renameClient(id) {
+async function renameClient(id, curCo = '') {
   const cur = document.querySelector('h1').textContent;
-  const n = prompt('Nombre del cliente (así se verá en el panel, en su perfil y en la base de conocimientos de su agente):', cur);
-  if (n && n.trim() && n.trim() !== cur) { await api('/clients/' + id, { method: 'PUT', body: JSON.stringify({ name: n.trim() }) }); viewClient(id); }
+  const n = prompt('Nombre de la persona (así se ve en el panel y en su perfil):', cur);
+  if (n === null) return;
+  const co = prompt('Nombre de la empresa (así se llama en la base de conocimientos de su agente; déjalo vacío para usar el nombre):', curCo);
+  if (co === null) return;
+  if (!n.trim()) return;
+  await api('/clients/' + id, { method: 'PUT', body: JSON.stringify({ name: n.trim(), company: co.trim() }) }); viewClient(id);
 }
 async function delClient(id, name) {
   if (prompt('Esto elimina a ' + name + ' con TODAS sus respuestas, proyectos, preguntas y archivos. No se puede deshacer.\n\nEscribe ELIMINAR para confirmar:') === 'ELIMINAR') { await api('/clients/' + id, { method: 'DELETE' }); location.hash = '#/clientes'; }

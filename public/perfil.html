@@ -68,21 +68,22 @@ async function api(path, opts = {}) {
 }
 
 /* ---------- entrada con correo ---------- */
-function gate(needName = false, email = '') {
+function gate(needName = false, email = '', nm0 = '', co0 = '') {
   document.getElementById('hdr').innerHTML = '';
   $.innerHTML = `<div class="card gate"><h1>Mi empresa</h1>
-    <p class="muted">${needName ? 'Es tu primera vez aquí. ¿Cómo te llamas?' : 'Escribe tu correo para ver y actualizar tus proyectos y tus preguntas y respuestas.'}</p>
+    <p class="muted">${needName ? 'Es tu primera vez aquí. Cuéntanos quién eres para crear tu perfil.' : 'Escribe tu correo para ver y actualizar tus proyectos y tus preguntas y respuestas.'}</p>
     <form id="f"><label class="q">Correo electrónico</label>
       <input type="email" id="email" required autocomplete="email" value="${esc(email)}" ${needName ? 'readonly' : 'autofocus'} placeholder="tu@correo.com">
-      ${needName ? '<label class="q">Tu nombre</label><input type="text" id="name" required autocomplete="name" autofocus placeholder="Nombre y apellido">' : ''}
+      ${needName ? `<label class="q">Tu nombre</label><input type="text" id="name" required autocomplete="name" autofocus maxlength="120" value="${esc(nm0)}" placeholder="Nombre y apellido">
+      <label class="q">Nombre de tu empresa</label><input type="text" id="company" required autocomplete="organization" maxlength="120" value="${esc(co0)}" placeholder="Nombre de tu inmobiliaria o empresa">` : ''}
       <div class="error" id="err"></div>
       <div style="text-align:right;margin-top:16px"><button class="primary" type="submit">${needName ? 'Entrar' : 'Continuar'}</button></div></form></div>`;
   document.getElementById('f').onsubmit = async ev => {
     ev.preventDefault(); const btn = ev.submitter; btn.disabled = true;
     try {
-      const em = document.getElementById('email').value.trim(), nm = document.getElementById('name')?.value.trim() || '';
-      const r = await api('/start', { method: 'POST', body: JSON.stringify({ email: em, name: nm }) });
-      if (r.needName) return gate(true, em);
+      const em = document.getElementById('email').value.trim(), nm = document.getElementById('name')?.value.trim() || '', co = document.getElementById('company')?.value.trim() || '';
+      const r = await api('/start', { method: 'POST', body: JSON.stringify({ email: em, name: nm, company: co }) });
+      if (r.needName) return gate(true, em, nm, co);
       load();
     } catch (e) { document.getElementById('err').textContent = e.message; btn.disabled = false; }
   };
@@ -102,7 +103,7 @@ function banner() {
   return `<div class="banner">🤖 <span>Tu agente de IA está conectado. Lo que cambies aquí se actualiza solo${me.syncedAt ? ' · última actualización: ' + esc(fmt(me.syncedAt)) : ''}.</span></div>`;
 }
 function render() {
-  $.innerHTML = `<h1>Hola, ${esc(me.name)}</h1><div class="muted">${esc(me.email)}</div>${banner()}
+  $.innerHTML = `<h1>Hola, ${esc(me.name)}</h1><div class="muted">${me.company ? esc(me.company) + ' · ' : ''}${esc(me.email)}</div>${banner()}
     <div class="tabs">
       ${[['proyectos', 'Proyectos'], ['faqs', 'Preguntas y respuestas'], ['cuestionarios', 'Mis cuestionarios']].map(([k, l]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}
     </div><div class="card" id="panel"></div>`;
