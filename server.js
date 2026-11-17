@@ -75,7 +75,7 @@ const baseUrl = (req) => APP_URL || `${req.protocol}://${req.get('host')}`;
 function fmtProjects(arr, sep, off = 0) {
   if (!Array.isArray(arr)) return '';
   return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
-    const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
+    const units = (p.units || []).filter((u) => u.type || u.price || u.size || u.note).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}${u.note ? ' (' + u.note + ')' : ''}`).join('; ');
     const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
     return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`, `Notas: ${p.notes || ''}`, `Enlaces: ${(p.links || []).join(', ')}`].join(sep.in);
   }).join(sep.out);

@@ -93,14 +93,14 @@ module.exports = function (ctx) {
 
   /* ---------- proyectos del cliente (agregados de todas sus respuestas) ---------- */
   const T = (v) => String(v ?? '').trim();
-  const isBlank = (p) => !(T(p.name) || T(p.location) || T(p.type) || T(p.delivery) || T(p.payment) || T(p.amenities_other) || T(p.notes) || (p.amenities || []).length || (p.links || []).length || (p.units || []).some((u) => T(u.type) || T(u.price) || T(u.size)));
+  const isBlank = (p) => !(T(p.name) || T(p.location) || T(p.type) || T(p.delivery) || T(p.payment) || T(p.amenities_other) || T(p.notes) || (p.amenities || []).length || (p.links || []).length || (p.units || []).some((u) => T(u.type) || T(u.price) || T(u.size) || T(u.note)));
   const S = (v, n) => String(v ?? '').slice(0, n);
   function cleanProject(p) {
     const arr = (x, n, m) => (Array.isArray(x) ? x : []).slice(0, n).map((v) => S(v, m)).filter((v) => v.trim());
     return {
       id: S(p.id, 40), name: S(p.name, 200), location: S(p.location, 300),
       type: ['Villas', 'Apartamentos', 'Ambos'].includes(p.type) ? p.type : '',
-      units: (Array.isArray(p.units) ? p.units : []).slice(0, 40).map((u) => ({ type: S(u && u.type, 200), price: S(u && u.price, 100), size: S(u && u.size, 100) })),
+      units: (Array.isArray(p.units) ? p.units : []).slice(0, 40).map((u) => ({ type: S(u && u.type, 200), price: S(u && u.price, 100), size: S(u && u.size, 100), note: S(u && u.note, 300) })),
       links: arr(p.links, 30, 500).filter((l) => /^https?:\/\//i.test(l)),
       delivery: S(p.delivery, 100), payment: S(p.payment, 3000), amenities: arr(p.amenities, 60, 100), amenities_other: S(p.amenities_other, 400), notes: S(p.notes, 3000),
     };
@@ -214,14 +214,14 @@ module.exports = function (ctx) {
       const docs = docsByKey.get(`${x.qid}#${x.uid}`) || [];
       const p = x.project;
       const n = esc(T(p.name) || '(sin nombre)');
-      const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size));
+      const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size) || T(u.note));
       const am = [...(p.amenities || []), p.amenities_other].map(T).filter(Boolean);
       const line = (label, val) => `<p>${n} — ${label}: ${val}</p>\n`;
       return `<section>\n<h2>Proyecto ${i + 1}: ${n}</h2>\n`
         + (T(p.location) ? line('Ubicación', esc(T(p.location))) : '')
         + (T(p.type) ? line('Tipo de proyecto', esc(T(p.type))) : '')
         + (T(p.delivery) ? line('Fecha de entrega', esc(T(p.delivery))) : '')
-        + units.map((u) => line('Unidades y precios', `${esc(T(u.type) || 'Unidad')}${T(u.price) ? '. Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? '. Metraje: ' + esc(T(u.size)) : ''}`)).join('')
+        + units.map((u) => line('Unidades y precios', `${esc(T(u.type) || 'Unidad')}${T(u.price) ? '. Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? '. Metraje: ' + esc(T(u.size)) : ''}${T(u.note) ? '. Nota: ' + esc(T(u.note)) : ''}`)).join('')
         + (T(p.payment) ? line('Plan de pago', esc(T(p.payment).split(/\r?\n+/).map((x) => x.trim()).filter(Boolean).join('; '))) : '')
         + (am.length ? line('Amenidades', esc(am.join(', '))) : '')
         + (T(p.notes) ? line('Notas', esc(T(p.notes).split(/\r?\n+/).map((x) => x.trim()).filter(Boolean).join(' '))) : '')
@@ -233,7 +233,7 @@ module.exports = function (ctx) {
       + '</body>\n</html>\n';
   }
   function projectText(p, n) {
-    const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size)).map((u) => `   • ${T(u.type) || '?'} — ${T(u.price) || '?'} — ${T(u.size) || '?'}`);
+    const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size) || T(u.note)).map((u) => `   • ${T(u.type) || '?'} — ${T(u.price) || '?'} — ${T(u.size) || '?'}${T(u.note) ? ' — Nota: ' + T(u.note) : ''}`);
     const am = [...(p.amenities || []), p.amenities_other].map(T).filter(Boolean).join(', ');
     return [`Proyecto ${n}: ${T(p.name) || '(sin nombre)'}`, `Ubicación: ${T(p.location)}`, `Tipo: ${T(p.type)}`, `Entrega: ${T(p.delivery)}`, 'Unidades:', ...units, `Plan de pago: ${T(p.payment)}`, `Amenidades: ${am}`, ...(T(p.notes) ? [`Notas: ${T(p.notes)}`] : []), ...((p.links || []).length ? [`Enlaces: ${p.links.join(', ')}`] : [])].join('\n');
   }

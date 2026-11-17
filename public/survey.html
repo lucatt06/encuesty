@@ -49,6 +49,7 @@ section{scroll-margin-top:70px}
 .un-head,.un-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 34px;gap:8px;align-items:center}
 .un-head{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
 .un-row{margin-bottom:8px}
+.un-row .un-note{grid-column:1/-1;font-size:13px;padding-top:6px;padding-bottom:6px}
 .pj-x{padding:4px 12px;font-size:13px;color:var(--muted)}
 .un-row .pj-x{padding:0;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1}
 .pj-link{border:0;background:none;color:var(--brand);padding:4px 2px;font-size:14px}
@@ -326,7 +327,7 @@ function renderItem(it) {
 }
 /* ---------- fichas de proyectos ---------- */
 const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
-const newUnit = () => ({ type: '', price: '', size: '' });
+const newUnit = () => ({ type: '', price: '', size: '', note: '' });
 const uid = () => 'p' + Math.random().toString(36).slice(2, 8);
 const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], links: [], delivery: '', payment: '', amenities: [], amenities_other: '', notes: '' });
 function getProjects(id) {
@@ -353,7 +354,8 @@ function projectCard(id, p, i) {
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo · Ej: Apto 2 hab" aria-label="Tipo de unidad">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (m²)" aria-label="Metraje">
-      ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}</div>`).join('')}
+      ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}
+      <input type="text" class="un-note" data-p="${i}" data-u="${j}" data-uf="note" maxlength="300" value="${esc(u.note)}" placeholder="Nota de este tipo (opcional) · Ej: incluye parqueo, vista al mar, últimas 3 unidades" aria-label="Nota de este tipo de unidad"></div>`).join('')}
     <button type="button" class="pj-addunit" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
     <label class="pj-l">Plan de pago</label>
     <textarea rows="1" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Construcción 30% · Entrega 60%">${esc(p.payment)}</textarea>
