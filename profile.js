@@ -747,34 +747,5 @@ module.exports = function (ctx) {
     res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
-  // TEMPORAL: migra precios (comas de miles) y metrajes (m²) de los proyectos ya guardados. Se elimina al terminar.
-  const _fmtPrice = (v) => String(v).replace(/\d[\d,]*(?:\.\d*)?/g, (run) => { const [int, dec] = run.split('.'); return int.replace(/,/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (dec !== undefined ? '.' + dec : ''); });
-  const _normSize = (v) => { let x = String(v || '').trim(); if (!x) return x; if (/^\d[\d.,]*$/.test(x)) return x + ' m²'; return x.replace(/(?<![A-Za-z])\s*(?:mts?|m)\s*\^?\s*2(?![\w])/gi, ' m²').replace(/(\d)\s*m²/g, '$1 m²').replace(/\s{2,}/g, ' ').trim(); };
-  app.post('/api/admin/tmp-migrate-units', adminAuth, async (req, res) => {
-    const apply = req.body && req.body.apply === true;
-    const { rows } = await pool.query('SELECT r.id, r.client_id, r.answers, c.name FROM responses r JOIN clients c ON c.id=r.client_id');
-    const changes = [], touched = new Set();
-    for (const r of rows) {
-      const a = r.answers || {}; let dirty = false;
-      for (const [qid, v] of Object.entries(a)) {
-        if (!Array.isArray(v)) continue;
-        for (const pr of v) {
-          if (!pr || !Array.isArray(pr.units)) continue;
-          for (const [j, u] of pr.units.entries()) {
-            if (!u || typeof u !== 'object') continue;
-            for (const [f, fn] of [['price', _fmtPrice], ['size', _normSize]]) {
-              if (typeof u[f] !== 'string' || !u[f].trim()) continue;
-              const after = fn(u[f]);
-              if (after !== u[f]) { changes.push({ cliente: r.name, proyecto: pr.name || '', tipo: u.type || '', campo: f, antes: u[f], despues: after }); if (apply) u[f] = after; dirty = true; }
-            }
-          }
-        }
-      }
-      if (apply && dirty) { await pool.query('UPDATE responses SET answers=$1, updated_at=now() WHERE id=$2', [a, r.id]); touched.add(r.client_id); }
-    }
-    if (apply) for (const id of touched) markKbDirty(id).catch(() => {});
-    res.json({ apply, total: changes.length, clientes: touched.size, changes });
-  });
-
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
