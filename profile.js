@@ -93,7 +93,7 @@ module.exports = function (ctx) {
 
   /* ---------- proyectos del cliente (agregados de todas sus respuestas) ---------- */
   const T = (v) => String(v ?? '').trim();
-  const isBlank = (p) => !(T(p.name) || T(p.location) || T(p.type) || T(p.delivery) || T(p.payment) || T(p.amenities_other) || (p.amenities || []).length || (p.links || []).length || (p.units || []).some((u) => T(u.type) || T(u.price) || T(u.size)));
+  const isBlank = (p) => !(T(p.name) || T(p.location) || T(p.type) || T(p.delivery) || T(p.payment) || T(p.amenities_other) || T(p.notes) || (p.amenities || []).length || (p.links || []).length || (p.units || []).some((u) => T(u.type) || T(u.price) || T(u.size)));
   const S = (v, n) => String(v ?? '').slice(0, n);
   function cleanProject(p) {
     const arr = (x, n, m) => (Array.isArray(x) ? x : []).slice(0, n).map((v) => S(v, m)).filter((v) => v.trim());
@@ -102,7 +102,7 @@ module.exports = function (ctx) {
       type: ['Villas', 'Apartamentos', 'Ambos'].includes(p.type) ? p.type : '',
       units: (Array.isArray(p.units) ? p.units : []).slice(0, 40).map((u) => ({ type: S(u && u.type, 200), price: S(u && u.price, 100), size: S(u && u.size, 100) })),
       links: arr(p.links, 30, 500).filter((l) => /^https?:\/\//i.test(l)),
-      delivery: S(p.delivery, 100), payment: S(p.payment, 3000), amenities: arr(p.amenities, 60, 100), amenities_other: S(p.amenities_other, 400),
+      delivery: S(p.delivery, 100), payment: S(p.payment, 3000), amenities: arr(p.amenities, 60, 100), amenities_other: S(p.amenities_other, 400), notes: S(p.notes, 3000),
     };
   }
   async function clientProjects(clientId) {
@@ -224,6 +224,7 @@ module.exports = function (ctx) {
         + units.map((u) => line('Unidades y precios', `${esc(T(u.type) || 'Unidad')}${T(u.price) ? '. Precio: ' + esc(T(u.price)) : ''}${T(u.size) ? '. Metraje: ' + esc(T(u.size)) : ''}`)).join('')
         + (T(p.payment) ? line('Plan de pago', esc(T(p.payment).split(/\r?\n+/).map((x) => x.trim()).filter(Boolean).join('; '))) : '')
         + (am.length ? line('Amenidades', esc(am.join(', '))) : '')
+        + (T(p.notes) ? line('Notas', esc(T(p.notes).split(/\r?\n+/).map((x) => x.trim()).filter(Boolean).join(' '))) : '')
         + (docs.length ? line(docs.length > 1 ? 'Documentos que se pueden enviar al cliente' : 'Documento que se puede enviar al cliente', docs.map((d) => `DOC-${d.id} (${esc(T(d.description))})`).join('; ')) : '')
         + '</section>';
     }).join('\n');
@@ -234,7 +235,7 @@ module.exports = function (ctx) {
   function projectText(p, n) {
     const units = (p.units || []).filter((u) => T(u.type) || T(u.price) || T(u.size)).map((u) => `   • ${T(u.type) || '?'} — ${T(u.price) || '?'} — ${T(u.size) || '?'}`);
     const am = [...(p.amenities || []), p.amenities_other].map(T).filter(Boolean).join(', ');
-    return [`Proyecto ${n}: ${T(p.name) || '(sin nombre)'}`, `Ubicación: ${T(p.location)}`, `Tipo: ${T(p.type)}`, `Entrega: ${T(p.delivery)}`, 'Unidades:', ...units, `Plan de pago: ${T(p.payment)}`, `Amenidades: ${am}`, ...((p.links || []).length ? [`Enlaces: ${p.links.join(', ')}`] : [])].join('\n');
+    return [`Proyecto ${n}: ${T(p.name) || '(sin nombre)'}`, `Ubicación: ${T(p.location)}`, `Tipo: ${T(p.type)}`, `Entrega: ${T(p.delivery)}`, 'Unidades:', ...units, `Plan de pago: ${T(p.payment)}`, `Amenidades: ${am}`, ...(T(p.notes) ? [`Notas: ${T(p.notes)}`] : []), ...((p.links || []).length ? [`Enlaces: ${p.links.join(', ')}`] : [])].join('\n');
   }
   app.get('/kb/:token', async (req, res) => {
     const t = req.params.token;

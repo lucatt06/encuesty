@@ -5,7 +5,7 @@
     return arr.filter((p) => p && (p.name || p.location)).map((p, i) => {
       const units = (p.units || []).filter((u) => u.type || u.price || u.size).map((u) => `${u.type || '?'} / ${u.price || '?'} / ${u.size || '?'}`).join('; ');
       const am = [...(p.amenities || []), p.amenities_other].filter(Boolean).join(', ');
-      return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`].join(sep.in);
+      return [`Proyecto ${i + 1 + off}: ${p.name || '(sin nombre)'}`, `Ubicación: ${p.location || ''}`, `Tipo: ${p.type || ''}`, `Unidades: ${units}`, `Entrega: ${p.delivery || ''}`, `Plan de pago: ${p.payment || ''}`, `Amenidades: ${am}`, `Notas: ${p.notes || ''}`].join(sep.in);
     }).join(sep.out);
   }
   // Devuelve el HTML de todas las respuestas de un cliente. fileUrl(id) da la dirección de descarga de cada archivo.

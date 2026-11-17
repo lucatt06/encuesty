@@ -123,6 +123,7 @@ section:first-of-type .sec-h{border-top:0;margin-top:26px}
 .pj-head{margin-bottom:-2px}.pj-title{font-size:15px}
 .pj-card .pj-l{margin:6px 0 2px;font-size:12.5px}
 .pj-card input[type=text],.pj-card textarea{padding:6px 10px;font-size:13.5px;border-radius:9px}
+.pj-card textarea[data-f=notes]{min-height:78px;resize:vertical;line-height:1.4}
 .pj-card textarea[data-f=payment]{height:34px;min-height:34px;overflow:hidden;resize:none;line-height:1.35}
 .pj-grid3{gap:8px}
 .pj-row{gap:8px;margin-top:4px}
@@ -327,7 +328,7 @@ function renderItem(it) {
 const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
 const newUnit = () => ({ type: '', price: '', size: '' });
 const uid = () => 'p' + Math.random().toString(36).slice(2, 8);
-const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], links: [], delivery: '', payment: '', amenities: [], amenities_other: '' });
+const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], links: [], delivery: '', payment: '', amenities: [], amenities_other: '', notes: '' });
 function getProjects(id) {
   let a = state.answers[id];
   if (!Array.isArray(a) || !a.length) { a = [newProject()]; state.answers[id] = a; }
@@ -358,6 +359,8 @@ function projectCard(id, p, i) {
     <textarea rows="1" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Construcción 30% · Entrega 60%">${esc(p.payment)}</textarea>
     <label class="pj-l">Amenidades <span class="muted" style="font-weight:400">(toca las que tiene)</span></label>
     <div class="chips">${AMENITIES.map(a => `<label class="opt chip ${p.amenities.includes(a) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-am="1" value="${esc(a)}" ${p.amenities.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}<input type="text" class="am-other" data-p="${i}" data-f="amenities_other" value="${esc(p.amenities_other)}" placeholder="Otras amenidades (menciona las que no estén en la lista)" aria-label="Otras amenidades"></div>
+    <label class="pj-l">Notas</label>
+    <textarea rows="3" data-p="${i}" data-f="notes" maxlength="3000" placeholder="Pon aquí cualquier información útil e interesante que quieras que maneje tu agente sobre este proyecto.">${esc(p.notes)}</textarea>
     <div class="pj-media">
       <div class="pj-mt">Documentos del proyecto</div>
       <div class="pj-mh">Brochure, planos, lista de precios, fotos… Tu agente de IA podrá enviárselos a tus clientes. <b>Describe cada archivo de forma específica.</b></div>
