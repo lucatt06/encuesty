@@ -49,6 +49,13 @@ section{scroll-margin-top:70px}
 .un-head,.un-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 34px;gap:8px;align-items:center}
 .un-head{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
 .un-row{margin-bottom:8px}
+.un-item{display:flex;align-items:flex-start;gap:6px;position:relative}
+.un-item>.un-row{flex:1;min-width:0}
+.un-grip{flex:none;width:24px;height:34px;padding:0;border:0;background:none;color:var(--muted);font-size:18px;line-height:34px;cursor:grab;touch-action:none;user-select:none;border-radius:6px}
+.un-grip:hover,.un-grip:focus-visible{background:var(--line);color:var(--navy,#0e1742)}
+.un-item.dragging{z-index:5;opacity:.92;cursor:grabbing;background:var(--card,#fff);box-shadow:0 8px 24px rgba(14,23,66,.25);border-radius:12px;pointer-events:none}
+.un-item.drop-above::before,.un-item.drop-below::after{content:'';position:absolute;left:0;right:0;height:3px;border-radius:3px;background:var(--brand)}
+.un-item.drop-above::before{top:-5px}.un-item.drop-below::after{bottom:3px}
 .un-row .un-note{grid-column:1/-1;font-size:13px;padding-top:6px;padding-bottom:6px}
 .pj-x{padding:4px 12px;font-size:13px;color:var(--muted)}
 .un-row .pj-x{padding:0;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1}
@@ -350,12 +357,12 @@ function projectCard(id, p, i) {
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
       <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
     <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><span class="pj-hint">Una fila por cada tipo (ej: una de 2 hab y otra de 3)</span></div>
-    ${p.units.map((u, j) => `<div class="un-row">
+    ${p.units.map((u, j) => `<div class="un-item">${p.units.length > 1 ? `<button type="button" class="un-grip" data-grip="${i}:${j}" aria-label="Arrastra para cambiar el orden de este tipo" title="Arrastra para cambiar el orden">⠿</button>` : ''}<div class="un-row">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo · Ej: Apto 2 hab" aria-label="Tipo de unidad">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="price" value="${esc(u.price)}" placeholder="Precio (USD)" aria-label="Precio">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="size" value="${esc(u.size)}" placeholder="Metraje (m²)" aria-label="Metraje">
       ${p.units.length > 1 ? `<button type="button" class="pj-x" data-un-del="${i}:${j}" aria-label="Quitar esta unidad">×</button>` : '<span></span>'}
-      <input type="text" class="un-note" data-p="${i}" data-u="${j}" data-uf="note" maxlength="300" value="${esc(u.note)}" placeholder="Nota de este tipo (opcional) · Ej: incluye parqueo, vista al mar, últimas 3 unidades" aria-label="Nota de este tipo de unidad"></div>`).join('')}
+      <input type="text" class="un-note" data-p="${i}" data-u="${j}" data-uf="note" maxlength="300" value="${esc(u.note)}" placeholder="Nota de este tipo (opcional) · Ej: incluye parqueo, vista al mar, últimas 3 unidades" aria-label="Nota de este tipo de unidad"></div></div>`).join('')}
     <button type="button" class="pj-addunit" data-un-add="${i}">+ Añadir otro tipo de unidad</button>
     <label class="pj-l">Plan de pago</label>
     <textarea rows="1" data-p="${i}" data-f="payment" placeholder="Ej: Monto de reserva USD 1,000 · Separación 10% · Construcción 30% · Entrega 60%">${esc(p.payment)}</textarea>
@@ -378,6 +385,23 @@ function bindProjects() {
     const redraw = (focusSel) => { root.innerHTML = projectsInner(id); bind(); if (focusSel) root.querySelector(focusSel)?.focus(); };
     const grow = el => { if (!el.value) { el.style.height = '34px'; return; } el.style.height = 'auto'; el.style.height = Math.max(34, el.scrollHeight + 2) + 'px'; };
     root.querySelectorAll('textarea[data-f=payment]').forEach(grow);
+    root.querySelectorAll('[data-grip]').forEach(g => {
+      const [pi, ji] = g.dataset.grip.split(':').map(Number);
+      const moveTo = (to, focus) => { if (document.activeElement && document.activeElement !== g && document.activeElement.blur) document.activeElement.blur(); const arr = getProjects(id); const us = arr[pi].units; if (to < 0 || to >= us.length || to === ji) return; const [u] = us.splice(ji, 1); us.splice(to, 0, u); setAns(id, arr); redraw(focus); };
+      g.onkeydown = e => { if (e.key === 'ArrowUp') { e.preventDefault(); moveTo(ji - 1, `[data-grip="${pi}:${ji - 1}"]`); } else if (e.key === 'ArrowDown') { e.preventDefault(); moveTo(ji + 1, `[data-grip="${pi}:${ji + 1}"]`); } };
+      g.onpointerdown = e => {
+        if (e.button > 0) return; e.preventDefault();
+        document.activeElement && document.activeElement.blur && document.activeElement.blur(); // guarda lo que se estaba escribiendo antes de mover
+        const card = g.closest('.pj-card'), items = [...card.querySelectorAll('.un-item')], item = items[ji];
+        const mids = items.map(it => { const r = it.getBoundingClientRect(); return r.top + r.height / 2; });
+        const y0 = e.clientY; let to = ji;
+        g.setPointerCapture(e.pointerId); item.classList.add('dragging');
+        const mark = () => { items.forEach(it => it.classList.remove('drop-above', 'drop-below')); const others = items.filter(it => it !== item); if (to === ji) return; if (to < others.length) others[to].classList.add('drop-above'); else others[others.length - 1].classList.add('drop-below'); };
+        g.onpointermove = ev => { const dy = ev.clientY - y0; item.style.transform = `translateY(${dy}px)`; const cur = mids[ji] + dy; to = mids.filter((m, k) => k !== ji && m < cur).length; mark(); };
+        const end = ev => { g.onpointermove = g.onpointerup = g.onpointercancel = null; try { g.releasePointerCapture(ev.pointerId); } catch {} items.forEach(it => it.classList.remove('drop-above', 'drop-below')); item.classList.remove('dragging'); item.style.transform = ''; if (ev.type === 'pointerup' && to !== ji) moveTo(to); };
+        g.onpointerup = g.onpointercancel = end;
+      };
+    });
     root.oninput = root.onchange = e => {
       const t = e.target; if (t.dataset.desc !== undefined) return descInput(t);
       if (t.dataset.p === undefined) return;
