@@ -407,6 +407,7 @@ function bindProjects() {
       if (t.dataset.p === undefined) return;
       if (t.dataset.f === 'payment') grow(t);
       const arr = getProjects(id), p = arr[+t.dataset.p];
+      if (t.dataset.uf === 'size' && e.type === 'change') { const n = normSize(t.value); if (n !== t.value) t.value = n; }
       if (t.dataset.uf) p.units[+t.dataset.u][t.dataset.uf] = t.value;
       else if (t.dataset.am !== undefined) { const set = new Set(p.amenities); t.checked ? set.add(t.value) : set.delete(t.value); p.amenities = [...set]; t.closest('.opt').classList.toggle('on', t.checked); }
       else if (t.dataset.f === 'type') { p.type = t.value; root.querySelectorAll(`[name="${t.name}"]`).forEach(r => r.closest('.opt').classList.toggle('on', r.checked)); }
@@ -461,6 +462,13 @@ const docRow = f => `<div class="doc-row" data-fid="${f.id}"><div class="doc-top
   <input type="text" class="doc-desc ${String(f.description || '').trim() ? '' : 'need'}" data-desc="${f.id}" maxlength="150" value="${esc(f.description)}" placeholder="¿Qué archivo es este? Sé específico. Ej: Plano apartamento de 1 habitación" aria-label="Descripción del archivo">
   ${docWarn(f) ? `<div class="doc-warn">${esc(docWarn(f))}</div>` : ''}</div>`;
 const descTimers = {};
+// Metraje: solo número → "N m²"; m2 / m^2 / mts2 → m²
+function normSize(v) {
+  let x = String(v || '').trim(); if (!x) return x;
+  if (/^\d[\d.,]*$/.test(x)) return x + ' m²';
+  x = x.replace(/(?<![A-Za-z])\s*(?:mts?|m)\s*\^?\s*2(?![\w])/gi, ' m²').replace(/(\d)\s*m²/g, '$1 m²').replace(/\s{2,}/g, ' ').trim();
+  return x;
+}
 /* visor de archivos dentro de la página */
 function closeViewer() { document.getElementById('fv')?.remove(); document.removeEventListener('keydown', fvKey); }
 function fvKey(e) { if (e.key === 'Escape') closeViewer(); }
