@@ -407,6 +407,7 @@ function bindProjects() {
       if (t.dataset.p === undefined) return;
       if (t.dataset.f === 'payment') grow(t);
       const arr = getProjects(id), p = arr[+t.dataset.p];
+      if (t.dataset.uf === 'price' && e.type === 'input') fmtPriceInput(t);
       if (t.dataset.uf === 'size' && e.type === 'change') { const n = normSize(t.value); if (n !== t.value) t.value = n; }
       if (t.dataset.uf) p.units[+t.dataset.u][t.dataset.uf] = t.value;
       else if (t.dataset.am !== undefined) { const set = new Set(p.amenities); t.checked ? set.add(t.value) : set.delete(t.value); p.amenities = [...set]; t.closest('.opt').classList.toggle('on', t.checked); }
@@ -462,6 +463,16 @@ const docRow = f => `<div class="doc-row" data-fid="${f.id}"><div class="doc-top
   <input type="text" class="doc-desc ${String(f.description || '').trim() ? '' : 'need'}" data-desc="${f.id}" maxlength="150" value="${esc(f.description)}" placeholder="¿Qué archivo es este? Sé específico. Ej: Plano apartamento de 1 habitación" aria-label="Descripción del archivo">
   ${docWarn(f) ? `<div class="doc-warn">${esc(docWarn(f))}</div>` : ''}</div>`;
 const descTimers = {};
+// Precio: pone comas de miles mientras se escribe, sin mover el cursor
+function fmtPrice(v) { return String(v).replace(/\d[\d,]*(?:\.\d*)?/g, run => { const [int, dec] = run.split('.'); const digits = int.replace(/,/g, ''); return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (dec !== undefined ? '.' + dec : ''); }); }
+function fmtPriceInput(el) {
+  const v = el.value, caret = el.selectionStart ?? v.length;
+  const before = (v.slice(0, caret).match(/\d/g) || []).length;
+  const out = fmtPrice(v); if (out === v) return;
+  el.value = out;
+  let pos = 0, seen = 0; while (pos < out.length && seen < before) { if (/\d/.test(out[pos])) seen++; pos++; }
+  try { el.setSelectionRange(pos, pos); } catch {}
+}
 // Metraje: solo número → "N m²"; m2 / m^2 / mts2 → m²
 function normSize(v) {
   let x = String(v || '').trim(); if (!x) return x;
