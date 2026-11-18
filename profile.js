@@ -793,11 +793,6 @@ module.exports = function (ctx) {
     } catch (e) { out.ok = false; out.error = e.message.slice(0, 300); }
     res.json(out);
   });
-  app.post('/api/admin/clients/:id/tmp-status', adminAuth, async (req, res) => {
-    const c = await tmpConn(req, res); if (!c) return; const out = [];
-    for (const id of (req.body.ids || []).slice(0, 20)) { try { const g = await ghlReq(c, 'GET', '/conversations/messages/' + encodeURIComponent(id)); const m = g.message || g; out.push({ id, status: m.status, type: m.messageType || m.type, att: (m.attachments || []).length, err: m.error || (m.meta && m.meta.error) || undefined, dateAdded: m.dateAdded }); } catch (e) { out.push({ id, error: e.message.slice(0, 120) }); } }
-    res.json(out);
-  });
   app.post('/api/admin/tmp-clean', adminAuth, async (req, res) => {
     const tools = ctx.s3tools; if (!tools) return res.json({ ok: false });
     const { s3, S3 } = tools; const l = await s3.send(new S3.ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: 'tmp-test/' }));
