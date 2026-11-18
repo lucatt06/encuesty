@@ -148,7 +148,7 @@ module.exports = function (ctx) {
   async function virtualPayload(client) {
     const [projs, files] = await Promise.all([
       clientProjects(client.id),
-      pool.query('SELECT f.id, f.question_id, f.filename, f.size, f.description FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 ORDER BY f.id', [client.id]),
+      pool.query('SELECT f.id, f.question_id, f.filename, f.size, f.orig_size, f.description FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 ORDER BY f.id', [client.id]),
     ]);
     const toVirtual = new Map(projs.map((x) => [`${x.qid}#${x.uid}`, `proyectos#${x.uid}`]));
     const vfiles = files.rows.filter((f) => toVirtual.has(f.question_id)).map((f) => ({ ...f, question_id: toVirtual.get(f.question_id) }));
@@ -434,13 +434,13 @@ module.exports = function (ctx) {
     const allProjs = await clientProjects(id);
     const projs = allProjs.filter((x) => !isBlank(x.project));
     const keyToProj = new Map(allProjs.map((x, i) => [`${x.qid}#${x.uid}`, T(x.project.name) || `Proyecto ${i + 1}`]));
-    const docRows = (await pool.query(`SELECT f.id, f.question_id, f.filename, f.size, f.description FROM files f JOIN responses r ON r.id=f.response_id
+    const docRows = (await pool.query(`SELECT f.id, f.question_id, f.filename, f.size, f.orig_size, f.description FROM files f JOIN responses r ON r.id=f.response_id
       WHERE r.client_id=$1 AND f.question_id LIKE '%#%' ORDER BY f.id`, [id])).rows.filter((f) => keyToProj.has(f.question_id));
     const faqs = (await pool.query("SELECT * FROM client_faqs WHERE client_id=$1 AND sync_state<>'delete' ORDER BY id", [id])).rows;
     return {
       client: { id: c.id, name: c.name, company: c.company || '', email: c.email },
       ghl: { hasToken: !!c.ghl_token_enc, locationId: c.ghl_location_id || '', kbId: c.ghl_kb_id || '', connected: !!(c.ghl_token_enc && c.ghl_kb_id), syncedAt: c.kb_synced_at, error: c.kb_error, dirty: !!c.kb_dirty_at, kbDocs: !!c.kb_docs },
-      docs: docRows.map((f) => ({ id: f.id, code: `DOC-${f.id}`, filename: f.filename, size: Number(f.size), description: f.description || '', project: keyToProj.get(f.question_id) })),
+      docs: docRows.map((f) => ({ id: f.id, code: `DOC-${f.id}`, filename: f.filename, size: Number(f.size), origSize: f.orig_size ? Number(f.orig_size) : null, description: f.description || '', project: keyToProj.get(f.question_id) })),
       kbUrl: `${publicBase()}/kb/${token}`,
       projects: projs.map((x, i) => ({ origin: x.slug === PROFILE_SLUG ? 'Perfil' : x.title, text: projectText(x.project, i + 1) })),
       faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer, state: f.sync_state, error: f.sync_error })),

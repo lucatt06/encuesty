@@ -159,6 +159,7 @@ async function initDb() {
     );
     ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
     ALTER TABLE files ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE files ADD COLUMN IF NOT EXISTS orig_size BIGINT;
     ALTER TABLE responses ADD COLUMN IF NOT EXISTS share_token TEXT;
     ALTER TABLE responses ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
     CREATE UNIQUE INDEX IF NOT EXISTS responses_share_token_idx ON responses (share_token) WHERE share_token IS NOT NULL;
@@ -272,9 +273,39 @@ app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
   res.json({ ok: true, savedAt: new Date().toISOString() });
 });
 
+/* ---------- compresión automática (> 5 MB) ---------- */
+const { compressFile, LIMIT: COMPRESS_LIMIT } = require('./compress');
+let cmpActive = 0; const cmpWait = [];
+const cmpSlot = () => new Promise((ok) => { const go = () => { cmpActive++; ok(); }; if (cmpActive < 2) go(); else cmpWait.push(go); });
+const cmpFree = () => { cmpActive--; const n = cmpWait.shift(); if (n) n(); };
+// Devuelve null si no hizo falta; { from, to, ok } si se comprimió; { skipped } si no se pudo (el original se conserva)
+async function compressUploaded(file, name) {
+  if (!(file.size > COMPRESS_LIMIT)) return null;
+  await cmpSlot();
+  const fsx = require('fs'), osx = require('os'), pathx = require('path');
+  const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'up-')); const inPath = pathx.join(dir, 'in.bin'); let r = null;
+  try {
+    if (file.buffer) fsx.writeFileSync(inPath, file.buffer);
+    else { const o = await s3.send(new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: file.key })); await require('stream/promises').pipeline(o.Body, fsx.createWriteStream(inPath)); }
+    r = await compressFile(inPath, file.mimetype, name);
+    if (!r || r.skipped) return r;
+    if (file.buffer) { file.buffer = fsx.readFileSync(r.path); }
+    else {
+      const key = `${file.key.split('/')[0]}/${crypto.randomUUID()}`;
+      await new S3.Upload({ client: s3, params: { Bucket: process.env.S3_BUCKET, Key: key, Body: fsx.createReadStream(r.path), ContentType: r.mime } }).done();
+      await s3Delete([file.key]); file.key = key;
+    }
+    file.size = r.to; file.mimetype = r.mime; file.newName = r.filename;
+    return { from: r.from, to: r.to, ok: r.ok };
+  } catch (e) { console.error('[comprimir subida]', e.message); return { skipped: 'error', error: e.message, from: file.size }; }
+  finally { fsx.rmSync(dir, { recursive: true, force: true }); if (r && r.dir) fsx.rmSync(r.dir, { recursive: true, force: true }); cmpFree(); }
+}
 app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se recibió el archivo.' });
-  const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
+  let filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200);
+  const origSize = req.file.size;
+  const cmp = await compressUploaded(req.file, filename);
+  if (req.file.newName) filename = req.file.newName.slice(0, 200);
   let rid = req.resp.id, qid = req.params.qid;
   if (req.virtual) {
     const t = await profile.resolveVirtualFile(req, req.params.qid);
@@ -282,10 +313,10 @@ app.post('/api/s/:slug/upload/:qid', clientAuth, upload.single('file'), async (r
     rid = t.rid; qid = t.qid;
   }
   const { rows } = await pool.query(
-    'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, question_id, filename, size, description',
-    [rid, qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null]);
+    'INSERT INTO files (response_id, question_id, filename, mime, size, data, s3_key, orig_size) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, question_id, filename, size, description',
+    [rid, qid, filename, req.file.mimetype, req.file.size, req.file.buffer || null, req.file.key || null, cmp && cmp.to ? origSize : null]);
   await pool.query('UPDATE responses SET updated_at=now() WHERE id=$1', [rid]);
-  res.json({ ok: true, file: req.virtual ? { ...rows[0], question_id: req.params.qid } : rows[0] });
+  res.json({ ok: true, file: req.virtual ? { ...rows[0], question_id: req.params.qid } : rows[0], compression: cmp ? (cmp.skipped ? { skipped: cmp.skipped } : { from: cmp.from, to: cmp.to, ok: cmp.ok }) : null });
 });
 // Ver un archivo propio dentro de la página (imagen, PDF o video); cualquier otro tipo se descarga.
 app.get('/api/s/:slug/file/:id/ver', clientAuth, async (req, res) => {
