@@ -456,7 +456,7 @@ const DOC_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.mp4,.mov,.doc,.docx,.xls,.xlsx,.
 const sizeTxt = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 function docWarn(f) {
   const mb = Number(f.size) / 1048576, kind = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov', '3gp', 'avif', 'tif', 'tiff'].includes((String(f.filename).split('.').pop() || '').toLowerCase());
-  if (kind && mb > 55) return `⚠ Pesa ${mb.toFixed(1)} MB y no se pudo comprimir a 55 MB; podría no enviarse bien por WhatsApp.`;
+  if (kind && mb > 55) return `⚠ Pesa ${mb.toFixed(1)} MB, más de 55 MB; podría no enviarse bien por WhatsApp. Sube una versión más liviana.`;
   if (!kind && mb > 100) return `⚠ Pesa ${mb.toFixed(1)} MB. WhatsApp admite aprox. 100 MB por documento; podría no enviarse.`;
   return '';
 }
