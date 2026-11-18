@@ -747,58 +747,5 @@ module.exports = function (ctx) {
     res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
-  // TEMPORAL (prueba de tamaños de envío). Se elimina al terminar.
-  const _digits = (x) => String(x || '').replace(/\D/g, '');
-  async function tmpConn(req, res) { const row = (await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id])).rows[0]; const c = row && connOf(row); if (!c) { res.json({ ok: false, error: 'sin conexion' }); return null; } return c; }
-  app.post('/api/admin/clients/:id/tmp-find', adminAuth, async (req, res) => {
-    const c = await tmpConn(req, res); if (!c) return;
-    const phone = _digits(req.body.phone).slice(-10); const out = { phone, tries: [], contacts: [] };
-    for (const [name, p, q] of [['contacts', '/contacts/', { locationId: c.loc, query: phone, limit: 10 }], ['conversations', '/conversations/search', { locationId: c.loc, query: phone, limit: 10 }]]) {
-      try { const j = await ghlReq(c, 'GET', p, { query: q });
-        const arr = j.contacts || j.conversations || [];
-        out.tries.push({ via: name, ok: true, n: arr.length });
-        for (const x of arr) out.contacts.push({ via: name, id: x.id && name === 'contacts' ? x.id : x.contactId, name: x.contactName || x.fullName || x.name || [x.firstName, x.lastName].filter(Boolean).join(' '), phone: x.phone || '', convId: name === 'conversations' ? x.id : undefined });
-      } catch (e) { out.tries.push({ via: name, ok: false, error: e.message.slice(0, 160) }); }
-    }
-    res.json(out);
-  });
-  app.post('/api/admin/clients/:id/tmp-sendtest', adminAuth, async (req, res) => {
-    const c = await tmpConn(req, res); if (!c) return;
-    const { contactId, mb, expectPhone } = req.body || {};
-    if (!/^[A-Za-z0-9_-]{8,64}$/.test(String(contactId || '')) || !(Number(mb) > 0 && Number(mb) <= 120)) return res.json({ ok: false, error: 'datos no validos' });
-    const tools = ctx.s3tools; if (!tools) return res.json({ ok: false, error: 'sin bucket S3' });
-    // seguridad: solo al contacto cuyo telefono termina como el esperado
-    let phone = ''; try { const j = await ghlReq(c, 'GET', '/contacts/' + encodeURIComponent(contactId)); phone = (j.contact || j).phone || ''; } catch (e) { return res.json({ ok: false, error: 'no pude verificar el telefono del contacto: ' + e.message.slice(0, 120) }); }
-    if (_digits(phone).slice(-10) !== _digits(expectPhone).slice(-10)) return res.json({ ok: false, error: 'el telefono del contacto no coincide; no se envia nada' });
-    const bytes = Math.round(Number(mb) * 1048576), head = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n');
-    const txt = `BT /F1 20 Tf 20 60 Td (Prueba de tamano: ${mb} MB) Tj ET`; const content = Buffer.from(`4 0 obj<</Length ${txt.length}>>stream\n${txt}\nendstream endobj\n`);
-    const padLen = Math.max(0, bytes - head.length - content.length - 120); const pad = Buffer.concat([Buffer.from(`6 0 obj<</Length ${padLen}>>stream\n`), require('crypto').randomBytes(padLen), Buffer.from('\nendstream endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')]);
-    const body = Buffer.concat([head, content, pad]);
-    const key = `tmp-test/${require('crypto').randomUUID()}.pdf`, name = `Prueba-${String(mb).replace('.', '_')}MB.pdf`;
-    const { s3, S3 } = tools;
-    await new S3.Upload({ client: s3, params: { Bucket: process.env.S3_BUCKET, Key: key, Body: body, ContentType: 'application/pdf' } }).done();
-    const url = await S3.getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key, ResponseContentType: 'application/pdf', ResponseContentDisposition: `inline; filename="${name}"` }), { expiresIn: 1800 });
-    const out = { mb, bytes: body.length, key, name, variants: [] };
-    try {
-      const ch = await detectChannel(c, contactId); if (ch.error) { out.error = ch.error; return res.json(out); }
-      out.canal = ch.label; const d = { description: `Prueba de tamaño: ${mb} MB`, mime: 'application/pdf', filename: name };
-      let sent = null, lastErr = null;
-      for (const v of ch.variants) {
-        try { const j = await ghlReq(c, 'POST', '/conversations/messages', { body: buildBody(v, contactId, d, url, name) }); sent = { v: v.type, id: j.messageId || (j.message && j.message.id) || j.id, raw: JSON.stringify(j).slice(0, 200) }; break; }
-        catch (e) { lastErr = e; out.variants.push({ v: v.type, error: e.message.slice(0, 200) }); if (!/PROVIDER_NOT_SUPPORTED/.test(e.message)) break; }
-      }
-      if (!sent) { out.ok = false; out.error = lastErr && lastErr.message.slice(0, 300); return res.json(out); }
-      out.ok = true; out.sent = sent; out.statusLog = [];
-      for (let i = 0; i < 8 && sent.id; i++) { await sleepMs(4000); try { const g = await ghlReq(c, 'GET', '/conversations/messages/' + sent.id); const m = g.message || g; out.statusLog.push(`${i * 4 + 4}s: ${m.status}${m.error ? ' ' + JSON.stringify(m.error).slice(0, 120) : ''}`); if (m.status && !/pending|queued|scheduled/i.test(m.status)) break; } catch (e) { out.statusLog.push('lectura: ' + e.message.slice(0, 100)); break; } }
-    } catch (e) { out.ok = false; out.error = e.message.slice(0, 300); }
-    res.json(out);
-  });
-  app.post('/api/admin/tmp-clean', adminAuth, async (req, res) => {
-    const tools = ctx.s3tools; if (!tools) return res.json({ ok: false });
-    const { s3, S3 } = tools; const l = await s3.send(new S3.ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: 'tmp-test/' }));
-    for (const o of l.Contents || []) await s3.send(new S3.DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: o.Key }));
-    res.json({ ok: true, borrados: (l.Contents || []).length });
-  });
-
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
