@@ -273,7 +273,7 @@ app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
   res.json({ ok: true, savedAt: new Date().toISOString() });
 });
 
-/* ---------- compresión automática (> 5 MB) ---------- */
+/* ---------- compresión automática (> 55 MB) ---------- */
 const { compressFile, LIMIT: COMPRESS_LIMIT } = require('./compress');
 let cmpActive = 0; const cmpWait = [];
 const cmpSlot = () => new Promise((ok) => { const go = () => { cmpActive++; ok(); }; if (cmpActive < 2) go(); else cmpWait.push(go); });

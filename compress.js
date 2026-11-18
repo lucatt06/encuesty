@@ -1,4 +1,4 @@
-/* Compresión de archivos subidos: deja cada archivo en LIMIT bytes o menos, con la mejor calidad posible
+/* Compresión de archivos subidos: deja cada archivo en LIMIT bytes (55 MB) o menos, con la mejor calidad posible
    (busca el ajuste más alto que quepa, así queda lo más cerca posible del tope).
    - Imágenes (jpg, png, webp, avif, tiff): se reconvierten a JPEG (mozjpeg) buscando la mayor calidad que quepa; si ni así, se reduce el tamaño.
    - PDF: Ghostscript (si está instalado) buscando la mayor resolución de imágenes que quepa.
@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const LIMIT = Number(process.env.COMPRESS_LIMIT_BYTES || 5 * 1024 * 1024);
+const LIMIT = Number(process.env.COMPRESS_LIMIT_BYTES || 55 * 1024 * 1024);
 const run = (cmd, args, timeout = 240000) => new Promise((resolve, reject) => {
   execFile(cmd, args, { timeout, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => (err ? reject(Object.assign(err, { stderr })) : resolve({ stdout, stderr })));
 });

@@ -376,7 +376,7 @@ function projectCard(id, p, i) {
       <div class="pj-mh">Brochure, planos, lista de precios, fotos… Tu agente de IA podrá enviárselos a tus clientes. <b>Describe cada archivo de forma específica.</b></div>
       <div class="doc-list" id="fl-${esc(id + '#' + p.id)}">${state.files.filter(f => f.question_id === id + '#' + p.id).map(docRow).join('')}</div>
       <label class="pj-up">+ Subir archivo<input type="file" multiple hidden accept="${DOC_ACCEPT}" data-file="${esc(id + '#' + p.id)}"></label>
-      <div class="pj-mh" style="margin-top:6px">PDF, imágenes o videos. Lo que pese más de 5 MB se comprime solo al subirlo, para que se pueda enviar por WhatsApp (puede tardar un poco).</div>
+      <div class="pj-mh" style="margin-top:6px">PDF, imágenes o videos. Lo que pese más de 55 MB se comprime solo al subirlo, para que se pueda enviar por WhatsApp (puede tardar un poco).</div>
     </div>
   </div>`;
 }
@@ -456,7 +456,7 @@ const DOC_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.mp4,.mov,.doc,.docx,.xls,.xlsx,.
 const sizeTxt = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 function docWarn(f) {
   const mb = Number(f.size) / 1048576, kind = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'mov', '3gp', 'avif', 'tif', 'tiff'].includes((String(f.filename).split('.').pop() || '').toLowerCase());
-  if (kind && mb > 5) return `⚠ Pesa ${mb.toFixed(1)} MB y no se pudo comprimir a 5 MB; podría no enviarse bien por WhatsApp.`;
+  if (kind && mb > 55) return `⚠ Pesa ${mb.toFixed(1)} MB y no se pudo comprimir a 55 MB; podría no enviarse bien por WhatsApp.`;
   if (!kind && mb > 100) return `⚠ Pesa ${mb.toFixed(1)} MB. WhatsApp admite aprox. 100 MB por documento; podría no enviarse.`;
   return '';
 }
@@ -592,12 +592,12 @@ async function uploadFiles(input) {
   for (const file of files) {
     const row = document.createElement('div'); row.className = 'file-item'; row.textContent = 'Subiendo ' + file.name + '… 0%'; list.appendChild(row);
     try {
-      const big = file.size > 5 * 1048576;
-      const r = await xhrUpload('/api/s/' + slug + '/upload/' + encodeURIComponent(qid), file, pct => { row.textContent = (big && pct >= 100) ? 'Comprimiendo ' + file.name + ' a 5 MB o menos… (puede tardar un poco)' : 'Subiendo ' + file.name + '… ' + pct + '%'; });
+      const big = file.size > 55 * 1048576;
+      const r = await xhrUpload('/api/s/' + slug + '/upload/' + encodeURIComponent(qid), file, pct => { row.textContent = (big && pct >= 100) ? 'Comprimiendo ' + file.name + ' a 55 MB o menos… (puede tardar un poco)' : 'Subiendo ' + file.name + '… ' + pct + '%'; });
       state.files.push(r.file); row.outerHTML = (qid.includes('#') ? docRow : fileRow)(r.file); updateProgress();
       const cm = r.compression, host = document.querySelector(`[data-viewfile="${r.file.id}"]`)?.closest('.doc-row, .file-item');
       if (cm && host) { const n = document.createElement('div'); n.className = cm.skipped || cm.ok === false ? 'doc-warn' : 'doc-ok';
-        n.textContent = cm.skipped ? (cm.skipped === 'tipo' ? 'Este tipo de archivo no se puede comprimir automáticamente.' : 'No se pudo comprimir este archivo; se guardó tal como lo subiste.') : `✓ Comprimido de ${sizeTxt(cm.from)} a ${sizeTxt(cm.to)}${cm.ok === false ? ' (no se logró bajar de 5 MB)' : ''}.`; host.appendChild(n); }
+        n.textContent = cm.skipped ? (cm.skipped === 'tipo' ? 'Este tipo de archivo no se puede comprimir automáticamente.' : 'No se pudo comprimir este archivo; se guardó tal como lo subiste.') : `✓ Comprimido de ${sizeTxt(cm.from)} a ${sizeTxt(cm.to)}${cm.ok === false ? ' (no se logró bajar de 55 MB)' : ''}.`; host.appendChild(n); }
       if (qid.includes('#')) document.querySelector(`[data-desc="${r.file.id}"]`)?.focus();
     } catch (e) { row.textContent = '⚠ ' + file.name + ': ' + e.message; row.style.color = 'var(--err)'; }
   }
