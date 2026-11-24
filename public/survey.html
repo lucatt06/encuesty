@@ -45,7 +45,8 @@ section{scroll-margin-top:70px}
 .pj-title{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-weight:800;font-size:18px;color:var(--navy)}
 .pj-l{display:block;font-weight:600;margin:16px 0 6px}
 .pj-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.pj-types{display:flex;gap:8px;flex-wrap:wrap}.pj-types .opt{margin:0;padding:9px 18px}
+.pj-types{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pj-types .type-other{flex:1;min-width:220px;padding:7px 14px;border-radius:999px}.pj-types .opt{margin:0;padding:9px 18px}
 .un-head,.un-row{display:grid;grid-template-columns:1.4fr 1fr .8fr 34px;gap:8px;align-items:center}
 .un-head{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
 .un-row{margin-bottom:8px}
@@ -335,6 +336,9 @@ function renderItem(it) {
 }
 /* ---------- fichas de proyectos ---------- */
 const AMENITIES = ['Piscina', 'Gimnasio', 'Área de BBQ / terraza', 'Club house / salón social', 'Seguridad 24/7', 'Playa privada / acceso a la playa', 'Spa / sauna', 'Cancha de pádel o tenis', 'Parque infantil', 'Coworking', 'Lobby / recepción', 'Ascensor', 'Estacionamiento', 'Planta eléctrica', 'Jardines / áreas verdes', 'Área de mascotas', 'Cine / sala de juegos', 'Campo de golf', 'Marina / muelle'];
+// Tipo de proyecto: Villas y/o Apartamentos (se pueden marcar los dos) + otro tipo escrito a mano. Se guarda como texto: "Villas, Apartamentos, Townhouses"
+const TYPE_BASE = ['Villas', 'Apartamentos'];
+const typeList = v => (String(v || '') === 'Ambos' ? 'Villas, Apartamentos' : String(v || '')).split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
 const newUnit = () => ({ type: '', price: '', size: '', note: '' });
 const uid = () => 'p' + Math.random().toString(36).slice(2, 8);
 const newProject = () => ({ id: uid(), name: '', location: '', type: '', units: [newUnit()], links: [], delivery: '', payment: '', amenities: [], amenities_other: '', notes: '' });
@@ -356,7 +360,7 @@ function projectCard(id, p, i) {
     <div class="pj-head"><span class="pj-title">Proyecto ${i + 1}${i === 0 ? (findQ(id)?.first_tag ?? ' · primera campaña') : ''}</span>${i > 0 ? `<button type="button" class="pj-x" data-pj-del="${i}">Quitar proyecto</button>` : ''}</div>
     <div class="pj-grid3">${inp('name', 'Nombre del proyecto', 'Ej: Torre Marina')}${inp('location', 'Ubicación', 'Ciudad o zona')}${inp('delivery', 'Fecha de entrega', 'Ej: Dic 2027')}</div>
     <div class="pj-row"><label class="pj-l">Tipo de proyecto</label>
-      <div class="pj-types">${['Villas', 'Apartamentos', 'Ambos'].map(t => `<label class="opt ${p.type === t ? 'on' : ''}"><input type="radio" name="pjt-${id}-${i}" data-p="${i}" data-f="type" value="${t}" ${p.type === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
+      <div class="pj-types">${TYPE_BASE.map(t => `<label class="opt ${typeList(p.type).includes(t) ? 'on' : ''}"><input type="checkbox" data-p="${i}" data-tc="${t}" ${typeList(p.type).includes(t) ? 'checked' : ''}><span>${t}</span></label>`).join('')}<input type="text" class="type-other" data-p="${i}" data-to="1" maxlength="120" value="${esc(typeList(p.type).filter(t => !TYPE_BASE.includes(t)).join(', '))}" placeholder="Otro tipo (ej: Townhouses, Penthouses, Lotes)" aria-label="Otro tipo de proyecto"></div></div>
     <div class="un-top"><label class="pj-l">Tipos de unidad, precio y metraje</label><span class="pj-hint">Una fila por cada tipo (ej: una de 2 hab y otra de 3)</span></div>
     ${p.units.map((u, j) => `<div class="un-item">${p.units.length > 1 ? `<button type="button" class="un-grip" data-grip="${i}:${j}" aria-label="Arrastra para cambiar el orden de este tipo" title="Arrastra para cambiar el orden">⠿</button>` : ''}<div class="un-row">
       <input type="text" data-p="${i}" data-u="${j}" data-uf="type" value="${esc(u.type)}" placeholder="Tipo · Ej: Apto 2 hab" aria-label="Tipo de unidad">
@@ -412,7 +416,11 @@ function bindProjects() {
       if (t.dataset.uf === 'size' && e.type === 'change') { const n = normSize(t.value); if (n !== t.value) t.value = n; }
       if (t.dataset.uf) p.units[+t.dataset.u][t.dataset.uf] = t.value;
       else if (t.dataset.am !== undefined) { const set = new Set(p.amenities); t.checked ? set.add(t.value) : set.delete(t.value); p.amenities = [...set]; t.closest('.opt').classList.toggle('on', t.checked); }
-      else if (t.dataset.f === 'type') { p.type = t.value; root.querySelectorAll(`[name="${t.name}"]`).forEach(r => r.closest('.opt').classList.toggle('on', r.checked)); }
+      else if (t.dataset.tc !== undefined || t.dataset.to !== undefined) {
+        const card = t.closest('.pj-card'), on = TYPE_BASE.filter(b => card.querySelector(`[data-tc="${b}"]`).checked), other = card.querySelector('[data-to]').value.split(',').map(x => x.trim()).filter(Boolean);
+        p.type = [...on, ...other.filter(x => !on.includes(x))].join(', ');
+        card.querySelectorAll('[data-tc]').forEach(c => c.closest('.opt').classList.toggle('on', c.checked));
+      }
       else p[t.dataset.f] = t.value;
       setAns(id, arr);
     };
