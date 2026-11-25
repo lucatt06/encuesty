@@ -770,40 +770,5 @@ module.exports = function (ctx) {
     res.json(out);
   });
 
-  // TEMPORAL (reparacion de datos). Se elimina al terminar.
-  app.post('/api/admin/tmp-fix', adminAuth, async (req, res) => {
-    const { apply, smRid, ssRid, ventasRid, qid, fileIds, uid, restore } = req.body || {};
-    const c = await pool.connect();
-    try {
-      await c.query('BEGIN');
-      const get = async (rid) => (await c.query('SELECT r.id, r.client_id, r.answers FROM responses r WHERE r.id=$1 FOR UPDATE', [rid])).rows[0];
-      const sm = await get(smRid), ss = await get(ssRid), vt = await get(ventasRid);
-      const plan = [];
-      const ssList = (ss && ss.answers && ss.answers[PROFILE_QID]) || [];
-      const proj = ssList.find((x) => x && x.id === uid);
-      const smList = (sm && sm.answers && sm.answers[PROFILE_QID]) || [];
-      if (!sm || !ss || !vt || !proj) throw new Error('faltan datos de origen');
-      if (!smList.some((x) => x && x.id === uid)) throw new Error('SM no tiene el proyecto');
-      if (!Array.isArray(vt.answers[qid]) || vt.answers[qid].length !== 0) throw new Error('la pregunta de proyectos de Sand And Sea no esta vacia; no se toca');
-      const files = (await c.query('SELECT id, response_id, question_id, filename FROM files WHERE id = ANY($1::int[])', [fileIds])).rows;
-      if (files.length !== fileIds.length || files.some((f) => f.response_id !== ssRid || f.question_id !== `${PROFILE_QID}#${uid}`)) throw new Error('archivos inesperados');
-      const restored = (restore || []).map((p0) => cleanProject(p0));
-      plan.push(`SM (cliente ${sm.client_id}): reemplazar proyecto ${uid} por la version completa (${(proj.units || []).length} unidad(es), notas ${T(proj.notes).length} car.)`);
-      plan.push(`mover archivos ${files.map((f) => f.id + ':' + f.filename).join(', ')} de la respuesta ${ssRid} a ${smRid}`);
-      plan.push(`Sand And Sea (cliente ${ss.client_id}): quitar el proyecto ${uid} del perfil y restaurar ${restored.length} proyectos en la pregunta ${qid}: ${restored.map((x) => x.name).join(' | ')}`);
-      if (apply === true) {
-        const smNew = smList.map((x) => (x && x.id === uid ? cleanProject(proj) : x));
-        await c.query('UPDATE responses SET answers = jsonb_set(answers, $2, $3::jsonb), updated_at=now() WHERE id=$1', [smRid, '{' + PROFILE_QID + '}', JSON.stringify(smNew)]);
-        await c.query('UPDATE files SET response_id=$1 WHERE id = ANY($2::int[]) AND response_id=$3', [smRid, fileIds, ssRid]);
-        await c.query('UPDATE responses SET answers = jsonb_set(answers, $2, $3::jsonb), updated_at=now() WHERE id=$1', [ssRid, '{' + PROFILE_QID + '}', JSON.stringify(ssList.filter((x) => !(x && x.id === uid)))]);
-        await c.query('UPDATE responses SET answers = jsonb_set(answers, $2, $3::jsonb), updated_at=now() WHERE id=$1', [ventasRid, '{' + qid + '}', JSON.stringify(restored)]);
-      }
-      await c.query(apply === true ? 'COMMIT' : 'ROLLBACK');
-      if (apply === true) { markKbDirty(sm.client_id).catch(() => {}); markKbDirty(ss.client_id).catch(() => {}); }
-      res.json({ ok: true, applied: apply === true, plan });
-    } catch (e) { await c.query('ROLLBACK').catch(() => {}); res.json({ ok: false, error: e.message }); }
-    finally { c.release(); }
-  });
-
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
