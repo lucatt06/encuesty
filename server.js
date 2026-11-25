@@ -262,7 +262,7 @@ app.get('/api/s/:slug/me', clientAuth, async (req, res) => {
 // Guardado automático
 app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
   const answers = req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
-  if (req.virtual) { await profile.virtualSave(req.client.id, answers.proyectos); return res.json({ ok: true, savedAt: new Date().toISOString() }); }
+  if (req.virtual) { await profile.virtualSave(req.client.id, answers.proyectos, req.body.removed); return res.json({ ok: true, savedAt: new Date().toISOString() }); }
   const step = Number.isInteger(req.body.step) ? req.body.step : req.resp.step;
   // se mezcla con lo existente para que un guardado atrasado no borre respuestas
   await pool.query(

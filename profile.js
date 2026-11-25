@@ -140,6 +140,8 @@ module.exports = function (ctx) {
     const t = readToken(cookies(req).enc_perfil);
     const c = t && t.c ? (await pool.query('SELECT * FROM clients WHERE id=$1', [t.c])).rows[0] : null;
     if (!c) return res.status(401).json({ error: 'Sesión expirada', relogin: true });
+    const loaded = req.get('x-client-key');
+    if (loaded && loaded !== String(c.id)) return res.status(409).json({ code: 'session_changed', error: 'Esta pestaña tiene abierto otro cliente distinto al de tu sesión actual. No se guardó nada. Recarga la página.' });
     req.client = c; req.virtual = true;
     req.survey = { id: 0, slug: VIRTUAL, title: 'Proyectos', schema: virtualSchema, thanks_message: '' };
     const pr = await profileResponse(c.id);
@@ -155,10 +157,11 @@ module.exports = function (ctx) {
     const vfiles = files.rows.filter((f) => toVirtual.has(f.question_id)).map((f) => ({ ...f, question_id: toVirtual.get(f.question_id) }));
     const withFiles = new Set(vfiles.map((f) => f.question_id.split('#')[1]));
     const list = projs.filter((x) => !isBlank(x.project) || withFiles.has(x.uid)).map((x) => x.project);
-    return { survey: { title: 'Proyectos', slug: VIRTUAL, schema: virtualSchema, thanks: '' }, answers: { proyectos: list }, step: 0, status: 'in_progress', files: vfiles };
+    return { survey: { title: 'Proyectos', slug: VIRTUAL, schema: virtualSchema, thanks: '' }, answers: { proyectos: list }, step: 0, status: 'in_progress', files: vfiles, clientKey: String(client.id) };
   }
-  async function virtualSave(clientId, arr) {
+  async function virtualSave(clientId, arr, removed) {
     if (!Array.isArray(arr)) return;
+    const removeIds = new Set((Array.isArray(removed) ? removed : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(x)));
     const cur = await clientProjects(clientId);
     const curMap = new Map(cur.map((x) => [x.uid, x]));
     const incoming = arr.filter((p) => p && typeof p === 'object' && typeof p.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(p.id)).slice(0, 200).map(cleanProject);
@@ -170,7 +173,7 @@ module.exports = function (ctx) {
       if (e) { if (!util.isDeepStrictEqual(cleanProject(e.project), p)) push(e.rid, e.qid, { t: 'replace', p }); }
       else if (!isBlank(p)) { prof = prof || (await profileResponse(clientId)); push(prof.id, PROFILE_QID, { t: 'add', p }); }
     }
-    for (const e of cur) if (!incIds.has(e.uid)) { push(e.rid, e.qid, { t: 'remove', uid: e.uid }); removedKeys.push([e.rid, `${e.qid}#${e.uid}`]); }
+    for (const e of cur) if (!incIds.has(e.uid) && removeIds.has(e.uid)) { push(e.rid, e.qid, { t: 'remove', uid: e.uid }); removedKeys.push([e.rid, `${e.qid}#${e.uid}`]); }
     for (const { rid, qid, list } of ops.values()) {
       await mutateAnswers(rid, (a) => {
         let cur2 = Array.isArray(a[qid]) ? a[qid] : [];

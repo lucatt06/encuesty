@@ -206,8 +206,10 @@ let state = { survey: null, steps: [], step: 0, answers: {}, files: [], name: ''
 let pending = {}, timer = null, saving = false;
 
 async function api(path, opts = {}) {
-  const r = await fetch('/api/s/' + slug + path, { headers: opts.body && !(opts.body instanceof FormData) ? {'Content-Type':'application/json'} : {}, credentials: 'same-origin', ...opts });
+  const hd = { ...(opts.body && !(opts.body instanceof FormData) ? {'Content-Type':'application/json'} : {}), ...(state.clientKey ? { 'X-Client-Key': state.clientKey } : {}) };
+  const r = await fetch('/api/s/' + slug + path, { headers: hd, credentials: 'same-origin', ...opts });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 409 && j.code === 'session_changed') lockSession(j.error);
   if (!r.ok) throw Object.assign(new Error(j.error || 'Error'), { status: r.status, data: j });
   return j;
 }
@@ -261,7 +263,7 @@ function renderLogin(title, needName = false, email = '') {
 function begin(r) {
   state.survey = r.survey; state.steps = buildSteps(r.survey.schema.items);
   state.steps.forEach((st, n) => st.items.forEach(i => { if (i.kind === 'question') secOf[i.id] = n; }));
-  state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name;
+  state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name; state.clientKey = r.clientKey || '';
   state.step = Math.min(r.step || 0, state.steps.length - 1);
   state.completed = r.status === 'completed';
   state.thanks = r.survey.thanks;
@@ -433,7 +435,7 @@ function bindProjects() {
         if (confirm('¿Quitar este proyecto' + (fs.length ? ', su información y sus ' + fs.length + ' archivo(s)' : ' y su información') + '?')) {
           Promise.all(fs.map(f => api('/file/' + f.id, { method: 'DELETE' }).catch(() => {}))).then(() => {
             state.files = state.files.filter(f => f.question_id !== id + '#' + pr.id);
-            arr.splice(arr.indexOf(pr), 1); setAns(id, arr); redraw(); updateProgress();
+            arr.splice(arr.indexOf(pr), 1); if (slug === '__proyectos') removedIds.add(pr.id); setAns(id, arr); redraw(); updateProgress();
           });
         }
       }
@@ -561,6 +563,17 @@ function setAns(id, v) {
 }
 
 /* ---------- guardado automático ---------- */
+// Proyectos que el cliente quitó a propósito (solo esos se borran en el servidor, con sus archivos)
+const removedIds = new Set();
+// Si esta pestaña cargó a un cliente y la sesión del navegador pasó a otro, se bloquea para no escribir datos en el cliente equivocado
+function lockSession(msg) {
+  clearTimeout(timer); pending = {};
+  if (document.getElementById('lockov')) return;
+  const d = document.createElement('div'); d.id = 'lockov';
+  d.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(14,23,66,.88);display:flex;align-items:center;justify-content:center;padding:20px';
+  d.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:460px;padding:24px;text-align:center"><h2 style="margin:0 0 10px">⚠ Esta pestaña ya no es válida</h2><p style="margin:0 0 16px">${esc(msg || 'La sesión cambió a otro cliente. No se guardó nada.')}</p><button class="primary" onclick="location.reload()">Recargar la página</button></div>`;
+  document.body.appendChild(d);
+}
 function schedule() { setSaved('Guardando…'); clearTimeout(timer); timer = setTimeout(flushSave, 700); }
 function setSaved(t) { state.saved = t; const e = document.getElementById('saved'); if (e) e.textContent = t; if (EMBED) try { parent.postMessage({ type: 'enc-saved', text: t }, location.origin); } catch {} }
 if (EMBED && window.ResizeObserver) new ResizeObserver(() => { try { parent.postMessage({ type: 'enc-height', h: document.documentElement.scrollHeight }, location.origin); } catch {} }).observe(document.body);
@@ -571,23 +584,26 @@ async function flushSave(step) {
   if (!Object.keys(batch).length && step === undefined) return setSaved('✓ Guardado');
   saving = true;
   try {
-    await api('/answers', { method: 'PUT', body: JSON.stringify({ answers: batch, step: step ?? state.step }) });
+    const rem = [...removedIds];
+    await api('/answers', { method: 'PUT', body: JSON.stringify({ answers: batch, step: step ?? state.step, ...(rem.length ? { removed: rem } : {}) }) });
+    rem.forEach(x => removedIds.delete(x));
     setSaved('✓ Guardado automáticamente');
   } catch (e) {
     pending = { ...batch, ...pending };
     if (e.status === 401) return renderLogin(state.title);
+    if (e.status === 409) { pending = {}; return; }
     setSaved('⚠ Sin conexión, reintentando…'); timer = setTimeout(flushSave, 3000);
   } finally { saving = false; }
 }
 window.addEventListener('beforeunload', () => {
-  if (Object.keys(pending).length) navigator.sendBeacon && fetch('/api/s/' + slug + '/answers', { method: 'PUT', keepalive: true, headers: {'Content-Type':'application/json'}, body: JSON.stringify({ answers: pending, step: state.step }) });
+  if (Object.keys(pending).length) navigator.sendBeacon && fetch('/api/s/' + slug + '/answers', { method: 'PUT', keepalive: true, headers: {'Content-Type':'application/json', ...(state.clientKey ? { 'X-Client-Key': state.clientKey } : {})}, body: JSON.stringify({ answers: pending, step: state.step, ...(removedIds.size ? { removed: [...removedIds] } : {}) }) });
 });
 
 /* ---------- archivos ---------- */
 function xhrUpload(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest(), fd = new FormData(); fd.append('file', file);
-    x.open('POST', url); x.withCredentials = true;
+    x.open('POST', url); x.withCredentials = true; if (state.clientKey) x.setRequestHeader('X-Client-Key', state.clientKey);
     x.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
     x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status >= 200 && x.status < 300 ? resolve(j) : reject(new Error(j.error || 'No se pudo subir el archivo.')); };
     x.onerror = () => reject(new Error('Se perdió la conexión. Inténtalo de nuevo.'));
