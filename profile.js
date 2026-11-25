@@ -751,5 +751,24 @@ module.exports = function (ctx) {
     res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
+  // TEMPORAL (recuperacion de datos, solo lectura). Se elimina al terminar.
+  app.post('/api/admin/tmp-dump', adminAuth, async (req, res) => {
+    const out = { clients: {} };
+    for (const id of (req.body.ids || []).slice(0, 5)) {
+      const resp = (await pool.query('SELECT r.id, r.answers, r.status, r.started_at, r.updated_at, s.slug FROM responses r JOIN surveys s ON s.id=r.survey_id WHERE r.client_id=$1 ORDER BY r.id', [id])).rows;
+      const files = (await pool.query('SELECT f.id, f.response_id, f.question_id, f.filename, f.mime, f.size, f.orig_size, f.description, (f.s3_key IS NOT NULL) AS s3, f.s3_key, f.created_at FROM files f JOIN responses r ON r.id=f.response_id WHERE r.client_id=$1 ORDER BY f.id', [id])).rows;
+      const c = { responses: resp, files, s3: [] };
+      if (ctx.s3tools && req.body.s3) {
+        const { s3, S3 } = ctx.s3tools;
+        for (const r of resp) {
+          try { const l = await s3.send(new S3.ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: `r${r.id}/` })); c.s3.push({ rid: r.id, objects: (l.Contents || []).map((o) => ({ key: o.Key, size: o.Size, at: o.LastModified })) }); } catch (e) { c.s3.push({ rid: r.id, error: e.message.slice(0, 100) }); }
+          try { const v = await s3.send(new S3.ListObjectVersionsCommand({ Bucket: process.env.S3_BUCKET, Prefix: `r${r.id}/` })); c.s3.push({ rid: r.id, versions: (v.Versions || []).map((o) => ({ key: o.Key, size: o.Size, latest: o.IsLatest, at: o.LastModified })), deleteMarkers: (v.DeleteMarkers || []).length }); } catch (e) { c.s3.push({ rid: r.id, versionsError: e.message.slice(0, 120) }); }
+        }
+      }
+      out.clients[id] = c;
+    }
+    res.json(out);
+  });
+
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
