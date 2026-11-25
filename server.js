@@ -89,7 +89,7 @@ function rateLimit(key, max, windowMs) {
 }
 
 /* ---------- perfil del cliente + sincronización con GHL (profile.js) ---------- */
-const profile = require('./profile')({ app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB: path.join(__dirname, 'public'), fileUrl: (...a) => fileSignedUrl(...a), s3tools: S3_ON ? { s3, S3 } : null });
+const profile = require('./profile')({ app, pool, readToken, makeToken, cookies, setCookie, validEmail, baseUrl, esc, adminAuth, s3Delete, rateLimit, SECRET, PUB: path.join(__dirname, 'public'), fileUrl: (...a) => fileSignedUrl(...a) });
 app.use((req, res, next) => { profile.setBase(baseUrl(req)); next(); });
 
 /* ---------- correo (GoHighLevel) ---------- */
