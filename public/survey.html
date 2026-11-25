@@ -209,7 +209,7 @@ async function api(path, opts = {}) {
   const hd = { ...(opts.body && !(opts.body instanceof FormData) ? {'Content-Type':'application/json'} : {}), ...(state.clientKey ? { 'X-Client-Key': state.clientKey } : {}) };
   const r = await fetch('/api/s/' + slug + path, { headers: hd, credentials: 'same-origin', ...opts });
   const j = await r.json().catch(() => ({}));
-  if (r.status === 409 && j.code === 'session_changed') lockSession(j.error);
+  if (r.status === 409 && (j.code === 'session_changed' || j.code === 'stale')) lockSession(j.error);
   if (!r.ok) throw Object.assign(new Error(j.error || 'Error'), { status: r.status, data: j });
   return j;
 }
@@ -263,7 +263,7 @@ function renderLogin(title, needName = false, email = '') {
 function begin(r) {
   state.survey = r.survey; state.steps = buildSteps(r.survey.schema.items);
   state.steps.forEach((st, n) => st.items.forEach(i => { if (i.kind === 'question') secOf[i.id] = n; }));
-  state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name; state.clientKey = r.clientKey || '';
+  state.answers = r.answers || {}; state.files = r.files || []; state.name = r.name; state.clientKey = r.clientKey || ''; state.revs = r.revs || null;
   state.step = Math.min(r.step || 0, state.steps.length - 1);
   state.completed = r.status === 'completed';
   state.thanks = r.survey.thanks;
@@ -571,7 +571,7 @@ function lockSession(msg) {
   if (document.getElementById('lockov')) return;
   const d = document.createElement('div'); d.id = 'lockov';
   d.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(14,23,66,.88);display:flex;align-items:center;justify-content:center;padding:20px';
-  d.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:460px;padding:24px;text-align:center"><h2 style="margin:0 0 10px">⚠ Esta pestaña ya no es válida</h2><p style="margin:0 0 16px">${esc(msg || 'La sesión cambió a otro cliente. No se guardó nada.')}</p><button class="primary" onclick="location.reload()">Recargar la página</button></div>`;
+  d.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:460px;padding:24px;text-align:center"><h2 style="margin:0 0 10px">⚠ Esta pestaña está desactualizada</h2><p style="margin:0 0 16px">${esc(msg || 'La sesión cambió a otro cliente. No se guardó nada.')}</p><button class="primary" onclick="location.reload()">Recargar la página</button></div>`;
   document.body.appendChild(d);
 }
 function schedule() { setSaved('Guardando…'); clearTimeout(timer); timer = setTimeout(flushSave, 700); }
@@ -585,7 +585,8 @@ async function flushSave(step) {
   saving = true;
   try {
     const rem = [...removedIds];
-    await api('/answers', { method: 'PUT', body: JSON.stringify({ answers: batch, step: step ?? state.step, ...(rem.length ? { removed: rem } : {}) }) });
+    const sv = await api('/answers', { method: 'PUT', body: JSON.stringify({ answers: batch, step: step ?? state.step, ...(rem.length ? { removed: rem } : {}), ...(state.revs ? { base: state.revs } : {}) }) });
+    if (sv.revs) state.revs = sv.revs;
     rem.forEach(x => removedIds.delete(x));
     setSaved('✓ Guardado automáticamente');
   } catch (e) {
@@ -596,7 +597,7 @@ async function flushSave(step) {
   } finally { saving = false; }
 }
 window.addEventListener('beforeunload', () => {
-  if (Object.keys(pending).length) navigator.sendBeacon && fetch('/api/s/' + slug + '/answers', { method: 'PUT', keepalive: true, headers: {'Content-Type':'application/json', ...(state.clientKey ? { 'X-Client-Key': state.clientKey } : {})}, body: JSON.stringify({ answers: pending, step: state.step, ...(removedIds.size ? { removed: [...removedIds] } : {}) }) });
+  if (Object.keys(pending).length && !document.getElementById('lockov')) navigator.sendBeacon && fetch('/api/s/' + slug + '/answers', { method: 'PUT', keepalive: true, headers: {'Content-Type':'application/json', ...(state.clientKey ? { 'X-Client-Key': state.clientKey } : {})}, body: JSON.stringify({ answers: pending, step: state.step, ...(removedIds.size ? { removed: [...removedIds] } : {}), ...(state.revs ? { base: state.revs } : {}) }) });
 });
 
 /* ---------- archivos ---------- */

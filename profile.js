@@ -148,6 +148,8 @@ module.exports = function (ctx) {
     req.resp = { ...pr, email: c.email, name: c.name };
     next();
   }
+  const revOf = (p) => crypto.createHash('sha1').update(JSON.stringify(cleanProject(p))).digest('hex').slice(0, 16);
+  async function virtualRevs(clientId) { return Object.fromEntries((await clientProjects(clientId)).map((x) => [x.uid, revOf(x.project)])); }
   async function virtualPayload(client) {
     const [projs, files] = await Promise.all([
       clientProjects(client.id),
@@ -157,9 +159,9 @@ module.exports = function (ctx) {
     const vfiles = files.rows.filter((f) => toVirtual.has(f.question_id)).map((f) => ({ ...f, question_id: toVirtual.get(f.question_id) }));
     const withFiles = new Set(vfiles.map((f) => f.question_id.split('#')[1]));
     const list = projs.filter((x) => !isBlank(x.project) || withFiles.has(x.uid)).map((x) => x.project);
-    return { survey: { title: 'Proyectos', slug: VIRTUAL, schema: virtualSchema, thanks: '' }, answers: { proyectos: list }, step: 0, status: 'in_progress', files: vfiles, clientKey: String(client.id) };
+    return { survey: { title: 'Proyectos', slug: VIRTUAL, schema: virtualSchema, thanks: '' }, answers: { proyectos: list }, step: 0, status: 'in_progress', files: vfiles, clientKey: String(client.id), revs: Object.fromEntries(projs.map((x) => [x.uid, revOf(x.project)])) };
   }
-  async function virtualSave(clientId, arr, removed) {
+  async function virtualSave(clientId, arr, removed, base) {
     if (!Array.isArray(arr)) return;
     const removeIds = new Set((Array.isArray(removed) ? removed : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(x)));
     const cur = await clientProjects(clientId);
@@ -168,6 +170,11 @@ module.exports = function (ctx) {
     const incIds = new Set(incoming.map((p) => p.id));
     const ops = new Map(); const push = (rid, qid, op) => { const k = rid + '|' + qid; if (!ops.has(k)) ops.set(k, { rid, qid, list: [] }); ops.get(k).list.push(op); };
     let prof = null; const removedKeys = [];
+    // control de versiones: si el proyecto cambió en el servidor desde que esta pestaña lo cargó, NO se pisa
+    if (base && typeof base === 'object') {
+      const stale = incoming.filter((p) => { const e = curMap.get(p.id); return e && base[p.id] !== undefined && base[p.id] !== revOf(e.project) && !util.isDeepStrictEqual(cleanProject(e.project), p); }).map((p) => p.id);
+      if (stale.length) { const err = new Error('stale'); err.code = 'stale'; err.ids = stale; throw err; }
+    }
     for (const p of incoming) {
       const e = curMap.get(p.id);
       if (e) { if (!util.isDeepStrictEqual(cleanProject(e.project), p)) push(e.rid, e.qid, { t: 'replace', p }); }
@@ -190,6 +197,7 @@ module.exports = function (ctx) {
       await s3Delete(rows.map((r) => r.s3_key));
     }
     if (ops.size) markKbDirty(clientId).catch(() => {});
+    return virtualRevs(clientId);
   }
   // a qué respuesta/clave real pertenece un archivo subido desde el editor del perfil
   async function resolveVirtualFile(req, qidParam) {

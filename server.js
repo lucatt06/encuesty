@@ -262,7 +262,10 @@ app.get('/api/s/:slug/me', clientAuth, async (req, res) => {
 // Guardado automático
 app.put('/api/s/:slug/answers', clientAuth, async (req, res) => {
   const answers = req.body.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
-  if (req.virtual) { await profile.virtualSave(req.client.id, answers.proyectos, req.body.removed); return res.json({ ok: true, savedAt: new Date().toISOString() }); }
+  if (req.virtual) {
+    try { const revs = await profile.virtualSave(req.client.id, answers.proyectos, req.body.removed, req.body.base); return res.json({ ok: true, savedAt: new Date().toISOString(), revs }); }
+    catch (e) { if (e && e.code === 'stale') return res.status(409).json({ code: 'stale', error: 'Este proyecto se modificó desde otro lugar (otra pestaña, otro dispositivo o el administrador). No se guardó nada para no pisar los cambios más nuevos. Recarga la página para ver la versión actual.' }); throw e; }
+  }
   const step = Number.isInteger(req.body.step) ? req.body.step : req.resp.step;
   // se mezcla con lo existente para que un guardado atrasado no borre respuestas
   await pool.query(
