@@ -627,7 +627,7 @@ module.exports = function (ctx) {
     const desc = T(d.description);
     const body = v.type === 'Email'
       ? { type: 'Email', contactId, subject: desc, html: `<p>Hola, te comparto el documento que pediste:</p><p><b>${esc(desc)}</b></p><p>Lo encontrarás adjunto en este correo.</p>` }
-      : { type: v.type, contactId, message: desc };
+      : { type: v.type, contactId, message: `Aquí está: ${desc}` };
     if (v.type === 'WhatsApp') body.whatsapp = { type: 'media', media: { type: mediaKind(d.mime, d.filename), url, name } };
     else body.attachments = [url];
     if (v.providerId) body.conversationProviderId = v.providerId;
@@ -686,7 +686,7 @@ module.exports = function (ctx) {
     if (!docs.length) return reply({ ok: false, estado: 'sin_documentos', mensaje: 'Este negocio todavía no tiene documentos disponibles para enviar.' });
     const r = resolveRequests(raw, docs, src.proyecto);
     // evita reenvíos si la IA reintenta: mismo documento al mismo contacto en los últimos 2 minutos
-    const recent = (await pool.query("SELECT file_id FROM agent_sends WHERE client_id=$1 AND contact_id=$2 AND created_at > now() - interval '2 minutes' AND status<>'error'", [row.id, contactId])).rows.map((x) => x.file_id);
+    const recent = (await pool.query("SELECT file_id FROM agent_sends WHERE client_id=$1 AND contact_id=$2 AND created_at > now() - interval '1 minute' AND status<>'error'", [row.id, contactId])).rows.map((x) => x.file_id);
     const already = r.send.filter((d) => recent.includes(d.id)); r.send = r.send.filter((d) => !recent.includes(d.id));
     const base = { no_encontrados: r.notFound, ambiguos: r.ambiguous, ya_enviados_hace_poco: already.map(label) };
     if (!r.send.length) {
