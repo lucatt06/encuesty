@@ -685,9 +685,8 @@ module.exports = function (ctx) {
     const docs = await sendableDocs(row.id);
     if (!docs.length) return reply({ ok: false, estado: 'sin_documentos', mensaje: 'Este negocio todavía no tiene documentos disponibles para enviar.' });
     const r = resolveRequests(raw, docs, src.proyecto);
-    // evita reenvíos si la IA reintenta: mismo documento al mismo contacto en los últimos 2 minutos
-    const recent = (await pool.query("SELECT file_id FROM agent_sends WHERE client_id=$1 AND contact_id=$2 AND created_at > now() - interval '2 minutes' AND status<>'error'", [row.id, contactId])).rows.map((x) => x.file_id);
-    const already = r.send.filter((d) => recent.includes(d.id)); r.send = r.send.filter((d) => !recent.includes(d.id));
+    // sin protección anti-duplicados: si el agente pide el mismo documento otra vez, se vuelve a enviar
+    const already = [];
     const base = { no_encontrados: r.notFound, ambiguos: r.ambiguous, ya_enviados_hace_poco: already.map(label) };
     if (!r.send.length) {
       const hay = !r.notFound.length && !r.ambiguous.length && already.length;
