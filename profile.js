@@ -759,5 +759,17 @@ module.exports = function (ctx) {
     res.json({ ok: checks.every((x) => x.ok), checks });
   });
 
+  // TEMPORAL (diagnostico de conversacion, solo lectura). Se elimina al terminar.
+  app.post('/api/admin/clients/:id/tmp-msgs', adminAuth, async (req, res) => {
+    const row = (await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id])).rows[0]; const c = row && connOf(row); if (!c) return res.json({ ok: false });
+    const last = (await pool.query('SELECT contact_id FROM agent_calls WHERE client_id=$1 AND contact_id<>\'\' ORDER BY id DESC LIMIT 1', [req.params.id])).rows[0];
+    try {
+      const cs = await ghlReq(c, 'GET', '/conversations/search', { query: { locationId: c.loc, contactId: last.contact_id, limit: 1 } });
+      const conv = (cs.conversations || [])[0]; const m = await ghlReq(c, 'GET', `/conversations/${encodeURIComponent(conv.id)}/messages`, { query: { limit: Math.min(Number(req.body.limit) || 30, 60) } });
+      const list = m.messages && Array.isArray(m.messages.messages) ? m.messages.messages : [];
+      res.json({ ok: true, conv: { id: conv.id, tags: conv.tags, type: conv.type, lastMessageType: conv.lastMessageType }, messages: list.map((x) => ({ at: x.dateAdded, dir: x.direction, type: x.messageType, source: x.source, status: x.status, userId: x.userId ? 'sí' : '', body: String(x.body || '').slice(0, 120), att: (x.attachments || []).length, meta: x.meta ? JSON.stringify(x.meta).slice(0, 120) : '' })) });
+    } catch (e) { res.json({ ok: false, error: e.message.slice(0, 200) }); }
+  });
+
   return { VIRTUAL, init, setBase, virtualAuth, virtualPayload, virtualSave, resolveVirtualFile, afterAnswers, markKbDirty, syncClient };
 };
