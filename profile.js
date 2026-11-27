@@ -627,7 +627,7 @@ module.exports = function (ctx) {
     const desc = T(d.description);
     const body = v.type === 'Email'
       ? { type: 'Email', contactId, subject: desc, html: `<p>Hola, te comparto el documento que pediste:</p><p><b>${esc(desc)}</b></p><p>Lo encontrarás adjunto en este correo.</p>` }
-      : { type: v.type, contactId, message: `Aquí está: ${desc}` };
+      : { type: v.type, contactId, message: desc };
     if (v.type === 'WhatsApp') body.whatsapp = { type: 'media', media: { type: mediaKind(d.mime, d.filename), url, name } };
     else body.attachments = [url];
     if (v.providerId) body.conversationProviderId = v.providerId;
@@ -650,6 +650,7 @@ module.exports = function (ctx) {
       throw lastErr;
     } catch (e) { await pool.query("UPDATE agent_sends SET status='error', error=$1 WHERE id=$2", [String(e.message).slice(0, 400), ins]); return { ok: false, error: e.message }; }
   }
+  const inflight = new Map(); // envíos diferidos en curso (evita duplicados si el agente reintenta)
   const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
   async function agentSend(req, res) {
     const key = req.params.key;
@@ -687,7 +688,8 @@ module.exports = function (ctx) {
     const r = resolveRequests(raw, docs, src.proyecto);
     // evita reenvíos si la IA reintenta: mismo documento al mismo contacto en los últimos 2 minutos
     const recent = (await pool.query("SELECT file_id FROM agent_sends WHERE client_id=$1 AND contact_id=$2 AND created_at > now() - interval '1 minute' AND status<>'error'", [row.id, contactId])).rows.map((x) => x.file_id);
-    const already = r.send.filter((d) => recent.includes(d.id)); r.send = r.send.filter((d) => !recent.includes(d.id));
+    const inflightKey = (d) => `${row.id}|${contactId}|${d.id}`; const isInflight = (d) => (inflight.get(inflightKey(d)) || 0) > Date.now();
+    const already = r.send.filter((d) => recent.includes(d.id) || isInflight(d)); r.send = r.send.filter((d) => !recent.includes(d.id) && !isInflight(d));
     const base = { no_encontrados: r.notFound, ambiguos: r.ambiguous, ya_enviados_hace_poco: already.map(label) };
     if (!r.send.length) {
       const hay = !r.notFound.length && !r.ambiguous.length && already.length;
@@ -698,6 +700,16 @@ module.exports = function (ctx) {
     let ch;
     try { ch = await detectChannel(c, contactId, src.canal); } catch (e) { console.error('[agente] canal', e.message); return reply({ ok: false, estado: 'error', ...base, mensaje: 'No pude consultar la conversación del cliente en GHL. No digas que lo enviaste: dile que un asesor se lo manda enseguida.' }); }
     if (ch.error) return reply({ ok: false, estado: 'error', ...base, mensaje: `No pude enviarlo: ${ch.error}. No digas que lo enviaste: dile que un asesor se lo manda enseguida.` });
+    // Modo con retraso (AGENT_SEND_DELAY_MS > 0): se le responde YA al agente y el documento sale unos segundos después, para que el agente
+    // diga su frase ("Aquí está") ANTES de que llegue el archivo (si el archivo sale antes, GHL deja al agente callado).
+    const DELAY = Number(process.env.AGENT_SEND_DELAY_MS || 0);
+    if (DELAY > 0) {
+      for (const d of r.send) inflight.set(inflightKey(d), Date.now() + DELAY + 60000);
+      const todo = r.send.slice();
+      setTimeout(async () => { for (let i = 0; i < todo.length; i++) { try { await sendOne(c, row.id, contactId, ch, todo[i]); } catch (e) { console.error('[agente] envio diferido', e.message); } if (i < todo.length - 1) await sleepMs(500); } }, DELAY);
+      const n0 = todo.length;
+      return reply({ ok: true, estado: 'enviando', canal: ch.label, enviados: [], fallidos: [], pendientes: todo.map(label), ...base, mensaje: `Ya está en camino: ${n0 === 1 ? 'el documento llegará' : `los ${n0} documentos llegarán`} en unos segundos por este mismo chat (${ch.label}).` });
+    }
     // Se envía y se espera el resultado real (hasta ~7 s, por el límite de 10 s de GHL) para poder decirle al agente la verdad.
     const results = [];
     const work = (async () => { for (let i = 0; i < r.send.length; i++) { const x = await sendOne(c, row.id, contactId, ch, r.send[i]); results.push({ d: r.send[i], ok: x.ok }); if (i < r.send.length - 1) await sleepMs(500); } })();
